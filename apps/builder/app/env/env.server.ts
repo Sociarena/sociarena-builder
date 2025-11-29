@@ -2,10 +2,13 @@
 const env = {
   // Authentication
   DEV_LOGIN: process.env.DEV_LOGIN,
-  GH_CLIENT_ID: process.env.GH_CLIENT_ID,
-  GH_CLIENT_SECRET: process.env.GH_CLIENT_SECRET,
-  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
-  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+
+  // OIDC Infomaniak
+  OIDC_ISSUER: process.env.OIDC_ISSUER,
+  OIDC_CLIENT_ID: process.env.OIDC_CLIENT_ID,
+  OIDC_CLIENT_SECRET: process.env.OIDC_CLIENT_SECRET,
+  OIDC_REDIRECT_URI: process.env.OIDC_REDIRECT_URI,
+  OIDC_SCOPES: process.env.OIDC_SCOPES,
 
   // Secret session key, context encode
   AUTH_SECRET: process.env.AUTH_SECRET,

@@ -107,17 +107,11 @@ export const userPlanSubscriptionPath = () => {
   return `/n8n/billing_portal/sessions?${urlSearchParams.toString()}`;
 };
 
-export const authCallbackPath = ({
-  provider,
-}: {
-  provider: "google" | "github";
-}) => `/auth/${provider}/callback`;
+export const authCallbackPath = ({ provider }: { provider: "infomaniak" }) =>
+  `/auth/${provider}/callback`;
 
-export const authPath = ({
-  provider,
-}: {
-  provider: "google" | "github" | "dev";
-}) => `/auth/${provider}`;
+export const authPath = ({ provider }: { provider: "infomaniak" | "dev" }) =>
+  `/auth/${provider}`;
 
 export const restAssetsPath = () => {
   return `/rest/assets`;
