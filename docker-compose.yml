@@ -1,14 +1,32 @@
 services: 
- webstudio: 
+ postgres:
+  image: postgres:16-alpine
+  container_name: webstudio-postgres
+  environment:
+   - POSTGRES_USER=webstudio
+   - POSTGRES_PASSWORD=rugjaf-zacbo4-fyRpak
+   - POSTGRES_DB=webstudio
+  volumes:
+   - postgres_data:/var/lib/postgresql/data
+  ports:
+   - "5432:5432"
+  restart: always
+  healthcheck:
+   test: ["CMD-SHELL", "pg_isready -U webstudio -d webstudio"]
+   interval: 10s
+   timeout: 5s
+   retries: 5
+
+ webstudio:
   build: . 
   container_name: webstudio-builder 
   environment: 
    - NODE_ENV=production
    - HOST=0.0.0.0 
    - PORT=3000
-   - DATABASE_URL=postgresql://webstudio:rugjaf-zacbo4-fyRpak@10.100.11.169:5432/webstudio
+   - DATABASE_URL=postgresql://webstudio:rugjaf-zacbo4-fyRpak@postgres:5432/webstudio
 
-   - OIDC_ISSUER=https://login.infomaniak.com/.well-known/openid-configuration 
+   - OIDC_ISSUER=https://login.infomaniak.com
    - OIDC_CLIENT_ID=e97a8676-fc42-471f-8506-111f526f96ed
    - OIDC_CLIENT_SECRET=vwxhJkGe2tXh5DqAri88I4xmnfTa2lGem3dzvECanDAA72Nz64i0YuGZB7y2QQsb
    - OIDC_REDIRECT_URI=https://builder.sociarena.com/auth/infomaniak/callback
@@ -17,4 +35,10 @@ services:
    - "3000:3000" 
   expose: 
    - "3000"
+  depends_on:
+   postgres:
+    condition: service_healthy
   restart: always
+
+volumes:
+ postgres_data:

@@ -86,9 +86,8 @@ export const loader = async ({
   return json(
     {
       isSecretLoginEnabled: env.DEV_LOGIN === "true",
-      isGithubEnabled: Boolean(env.GH_CLIENT_ID && env.GH_CLIENT_SECRET),
-      isGoogleEnabled: Boolean(
-        env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+      isInfomaniakEnabled: Boolean(
+        env.OIDC_ISSUER && env.OIDC_CLIENT_ID && env.OIDC_CLIENT_SECRET
       ),
     },
     { headers }
