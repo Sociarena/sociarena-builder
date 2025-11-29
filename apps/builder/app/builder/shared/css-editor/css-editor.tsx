@@ -1,5 +1,5 @@
 import { mergeRefs } from "@react-aria/utils";
-import { colord } from "colord";
+import Color from "colorjs.io";
 import {
   memo,
   useEffect,
@@ -35,7 +35,7 @@ import {
 import { CssValueInputContainer } from "../../features/style-panel/shared/css-value-input";
 import { $availableVariables } from "../../features/style-panel/shared/model";
 import { PropertyInfo } from "../../features/style-panel/property-label";
-import { ColorPopover } from "../../features/style-panel/shared/color-picker";
+import { ColorPickerPopover } from "@webstudio-is/design-system";
 import { useClientSupports } from "~/shared/client-supports";
 import { CssEditorContextMenu, copyAttribute } from "./css-editor-context-menu";
 import { AddStyleInput } from "./add-style-input";
@@ -132,7 +132,13 @@ const AdvancedPropertyValue = ({
   inputRef?: RefObject<HTMLInputElement>;
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
-  const isColor = colord(toValue(styleDecl.usedValue)).isValid();
+  let isColor = false;
+  try {
+    new Color(toValue(styleDecl.usedValue));
+    isColor = true;
+  } catch {
+    isColor = false;
+  }
 
   return (
     <CssValueInputContainer
@@ -142,7 +148,7 @@ const AdvancedPropertyValue = ({
       fieldSizing="content"
       prefix={
         isColor && (
-          <ColorPopover
+          <ColorPickerPopover
             value={styleDecl.usedValue}
             onChange={(styleValue) => {
               const options = { isEphemeral: true, listed: true };
