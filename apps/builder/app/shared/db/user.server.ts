@@ -3,9 +3,15 @@ import {
   AuthorizationError,
   type AppContext,
 } from "@webstudio-is/trpc-interface/index.server";
-import type { GitHubProfile } from "remix-auth-github";
-import type { GoogleProfile } from "remix-auth-google";
 import { z } from "zod";
+
+// Generic OAuth profile interface
+export interface OAuthProfile {
+  provider: string;
+  displayName: string;
+  emails?: Array<{ value: string }>;
+  photos?: Array<{ value: string }>;
+}
 
 export type User = Omit<
   Database["public"]["Tables"]["User"]["Row"],
@@ -80,7 +86,7 @@ const genericCreateAccount = async (
 
 export const createOrLoginWithOAuth = async (
   context: AppContext,
-  profile: GoogleProfile | GitHubProfile
+  profile: OAuthProfile
 ): Promise<User> => {
   const userData = {
     email: (profile.emails ?? [])[0]?.value,
@@ -88,8 +94,7 @@ export const createOrLoginWithOAuth = async (
     image: (profile.photos ?? [])[0]?.value,
     provider: profile.provider,
   };
-  const newUser = await genericCreateAccount(context, userData);
-  return newUser;
+  return await genericCreateAccount(context, userData);
 };
 
 export const createOrLoginWithDev = async (
@@ -103,8 +108,7 @@ export const createOrLoginWithDev = async (
     provider: "dev",
   };
 
-  const newUser = await genericCreateAccount(context, userData);
-  return newUser;
+  return await genericCreateAccount(context, userData);
 };
 
 export const userProjectTagSchema = z.object({
