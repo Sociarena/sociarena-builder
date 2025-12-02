@@ -1,5 +1,4 @@
-import { useMemo, type ComponentProps, type JSX } from "react";
-import type { RgbaColor } from "colord";
+import { useMemo, type ComponentProps, type JSX, type ReactNode } from "react";
 import {
   toValue,
   type CssProperty,
@@ -20,11 +19,11 @@ import {
   toast,
   useSortable,
   FloatingPanel,
+  ColorThumb,
 } from "@webstudio-is/design-system";
 import { repeatUntil } from "~/shared/array-utils";
 import type { ComputedStyleDecl } from "~/shared/style-object-model";
 import { createBatchUpdate, type StyleUpdateOptions } from "./use-style-data";
-import { ColorThumb } from "./color-thumb";
 
 const isRepeatedValue = (
   styleValue: StyleValue
@@ -227,7 +226,19 @@ export const setRepeatedStyleItem = (
   const value = styleDecl.cascadedValue;
   const valueType: ItemType = value.type === "tuple" ? "tuple" : "layers";
   const oldItems = value.type === valueType ? value.value : [];
+
+  // Fill missing items with initial value instead of undefined
   const newItems: StyleValue[] = repeatUntil(oldItems, index);
+  if (oldItems.length === 0 && index > 0) {
+    const meta = propertiesData[styleDecl.property];
+    if (meta) {
+      const initialValue = meta.initial as UnparsedValue;
+      for (let i = 0; i < index; i++) {
+        newItems[i] = initialValue;
+      }
+    }
+  }
+
   // unpack item when layers or tuple is provided
   newItems[index] = newItem.type === valueType ? newItem.value[0] : newItem;
   batch.setProperty(styleDecl.property)({
@@ -328,10 +339,20 @@ export const RepeatedStyle = (props: {
   getItemProps: (
     index: number,
     primaryValue: StyleValue
-  ) => { label: string; color?: RgbaColor };
+  ) => { label: string; color?: string };
   floatingPanelOffset?: ComponentProps<typeof FloatingPanel>["offset"];
   renderThumbnail?: (index: number, primaryItem: StyleValue) => JSX.Element;
   renderItemContent: (index: number, primaryItem: StyleValue) => JSX.Element;
+  renderItemButtons?: (
+    index: number,
+    primaryItem: StyleValue,
+    options: { isHidden: boolean; canBeChanged: boolean }
+  ) => ReactNode;
+  renderPanelTitleSuffix?: (
+    index: number,
+    primaryItem: StyleValue,
+    options: { isHidden: boolean; canBeChanged: boolean }
+  ) => ReactNode;
 }) => {
   const {
     label,
@@ -340,6 +361,8 @@ export const RepeatedStyle = (props: {
     renderThumbnail,
     renderItemContent,
     floatingPanelOffset,
+    renderItemButtons,
+    renderPanelTitleSuffix,
   } = props;
   // first property should describe the amount of layers or tuple items
   const primaryValue = styles[0].cascadedValue;
@@ -385,11 +408,24 @@ export const RepeatedStyle = (props: {
           const isHidden = isItemHidden(styles[0].cascadedValue, index);
           const canBeChanged =
             styles[0].cascadedValue.type === "var" ? index === 0 : true;
+          const customButtons = renderItemButtons?.(index, primaryItem, {
+            isHidden,
+            canBeChanged,
+          });
+          const panelTitleSuffix = renderPanelTitleSuffix?.(
+            index,
+            primaryItem,
+            {
+              isHidden,
+              canBeChanged,
+            }
+          );
           return (
             <FloatingPanel
               key={index}
               title={label}
               content={renderItemContent(index, primaryItem)}
+              titleSuffix={panelTitleSuffix}
               offset={floatingPanelOffset}
             >
               <CssValueListItem
@@ -401,10 +437,11 @@ export const RepeatedStyle = (props: {
                 hidden={isHidden}
                 thumbnail={
                   renderThumbnail?.(index, primaryItem) ??
-                  (itemColor && <ColorThumb color={itemColor} />)
+                  (itemColor ? <ColorThumb color={itemColor} /> : undefined)
                 }
                 buttons={
                   <>
+                    {customButtons}
                     <SmallToggleButton
                       variant="normal"
                       pressed={isHidden}
