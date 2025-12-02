@@ -7,7 +7,7 @@ import {
   Text,
   theme,
 } from "@webstudio-is/design-system";
-import { GithubIcon, GoogleIcon, WebstudioIcon } from "@webstudio-is/icons";
+import { WebstudioIcon } from "@webstudio-is/icons";
 import { Form } from "@remix-run/react";
 import { authPath } from "~/shared/router-utils";
 import { SecretLogin } from "./secret-login";
@@ -19,17 +19,33 @@ const globalStyles = globalCss({
   },
 });
 
+// Simple Infomaniak icon component
+const InfomaniakIcon = () => (
+  <svg
+    role="img"
+    viewBox="0 0 24 24"
+    xmlns="http://www.w3.org/2000/svg"
+    id="Infomaniak--Streamline-Simple-Icons"
+    height="24"
+    width="24"
+  >
+    <path
+      d="M2.4 0A2.395 2.395 0 0 0 0 2.4v19.2C0 22.9296 1.0704 24 2.4 24h19.2c1.3296 0 2.4 -1.0704 2.4 -2.4V2.4C24 1.0704 22.9296 0 21.6 0H10.112v11.7119l3.648 -4.128h6l-4.58 4.3506 4.868 8.1296h-5.52l-2.5938 -5.0211L10.112 16.8v3.264H5.12V0Z"
+      fill="#ffffff"
+      stroke-width="1"
+    ></path>
+  </svg>
+);
+
 export type LoginProps = {
   errorMessage?: string;
-  isGithubEnabled?: boolean;
-  isGoogleEnabled?: boolean;
+  isInfomaniakEnabled?: boolean;
   isSecretLoginEnabled?: boolean;
 };
 
 export const Login = ({
   errorMessage,
-  isGithubEnabled,
-  isGoogleEnabled,
+  isInfomaniakEnabled = true,
   isSecretLoginEnabled,
 }: LoginProps) => {
   globalStyles();
@@ -65,25 +81,13 @@ export const Login = ({
           <Flex direction="column" gap="3" css={{ width: "100%" }}>
             <Form method="post" style={{ display: "contents" }}>
               <Button
-                disabled={isGoogleEnabled === false}
-                prefix={<GoogleIcon size={22} />}
+                disabled={isInfomaniakEnabled === false}
+                prefix={<InfomaniakIcon />}
                 color="primary"
                 css={{ height: theme.spacing[15] }}
-                formAction={authPath({ provider: "google" })}
+                formAction={authPath({ provider: "infomaniak" })}
               >
-                Sign in with Google
-              </Button>
-              <Button
-                disabled={isGithubEnabled === false}
-                prefix={<GithubIcon size={22} fill="currentColor" />}
-                color="ghost"
-                css={{
-                  border: `1px solid ${theme.colors.borderDark}`,
-                  height: theme.spacing[15],
-                }}
-                formAction={authPath({ provider: "github" })}
-              >
-                Sign in with GitHub
+                Sign in with Infomaniak
               </Button>
             </Form>
             {isSecretLoginEnabled && <SecretLogin />}
