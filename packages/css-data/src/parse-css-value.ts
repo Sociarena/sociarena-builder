@@ -1,5 +1,4 @@
-import { colord, extend } from "colord";
-import namesPlugin from "colord/plugins/names";
+import Color from "colorjs.io";
 import {
   type CssNode,
   type FunctionNode,
@@ -29,9 +28,6 @@ import {
 } from "@webstudio-is/css-engine";
 import { keywordValues } from "./__generated__/keyword-values";
 import { units } from "./__generated__/units";
-
-// To support color names
-extend([namesPlugin]);
 
 export const cssTryParseValue = (input: string): undefined | CssNode => {
   try {
@@ -159,16 +155,20 @@ const tupleProps = new Set<CssProperty>([
 const availableUnits = new Set<string>(Object.values(units).flat());
 
 const parseColor = (colorString: string): undefined | RgbValue => {
-  const color = colord(colorString);
-  if (color.isValid()) {
-    const rgb = color.toRgb();
+  try {
+    const color = new Color(colorString).to("srgb");
+    // colorjs.io represents RGB values as 0-1 range
+    const [r, g, b] = color.coords.map((coord) => coord.valueOf());
+    const alpha = Number(color.alpha.valueOf().toFixed(2));
     return {
       type: "rgb",
-      alpha: rgb.a,
-      r: rgb.r,
-      g: rgb.g,
-      b: rgb.b,
+      alpha: alpha ?? 1,
+      r: Math.round(r * 255),
+      g: Math.round(g * 255),
+      b: Math.round(b * 255),
     };
+  } catch {
+    return;
   }
 };
 
@@ -219,6 +219,7 @@ export const parseCssVar = (node: FunctionNode): undefined | VarValue => {
   const [name, _comma, ...fallback] = node.children;
   const fallbackString = generate({
     type: "Value",
+    loc: null,
     children: new List<CssNode>().fromArray(fallback),
   }).trim();
   if (name.type === "Identifier") {
@@ -380,7 +381,7 @@ const parseLiteral = (
         type: "function",
         args: parseShadow(
           node.children.toArray(),
-          generate({ type: "Value", children: node.children })
+          generate({ type: "Value", loc: null, children: node.children })
         ),
         name: node.name,
       };
@@ -469,6 +470,7 @@ export const parseCssValue = (
       value: splitRepeated(nodes).map((nodes) => {
         const value = generate({
           type: "Value",
+          loc: null,
           children: new List<CssNode>().fromArray(nodes),
         });
         const parsed = parseCssValue(property, value, false) as LayerValueItem;
@@ -506,6 +508,7 @@ export const parseCssValue = (
         }
         return generate({
           type: "Value",
+          loc: null,
           children: new List<CssNode>().fromArray(nodes),
         });
       }),
