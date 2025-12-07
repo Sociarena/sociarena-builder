@@ -11,11 +11,11 @@ COPY packages ./packages
 
 RUN pnpm install --frozen-lockfile
 
-RUN apk add --no-cache openssl && \ 
-    mkdir -p /app/https && \ 
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \ 
-      -keyout /app/https/privkey.pem \ 
-      -out /app/https/fullchain.pem \ 
+RUN apk add --no-cache openssl && \
+    mkdir -p /app/https && \
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout /app/https/privkey.pem \
+      -out /app/https/fullchain.pem \
       -subj "/CN=localhost"
 
 ENV HTTPS_DISABLE=true 
@@ -30,7 +30,7 @@ COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 ENV NODE_ENV=production 
 ENV HOST=0.0.0.0 
-ENV PORT=3000 
+ENV PORT=3000
 ENV PUBLIC_URL=https://builder.sociarena.com
 
 CMD ["/app/start.sh"]

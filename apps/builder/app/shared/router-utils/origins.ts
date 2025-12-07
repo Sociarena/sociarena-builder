@@ -3,6 +3,11 @@ import { parseBuilderUrl } from "@webstudio-is/http-client";
 export const getRequestOrigin = (urlStr: string) => {
   const url = new URL(urlStr);
 
+  // Force HTTPS in production (when behind a reverse proxy)
+  if (process.env.NODE_ENV === "production") {
+    url.protocol = "https:";
+  }
+
   return url.origin;
 };
 

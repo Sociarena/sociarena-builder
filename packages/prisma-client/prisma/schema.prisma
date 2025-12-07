@@ -279,19 +279,18 @@ view LatestStaticBuildPerProject {
   buildId String
   build   Build  @relation(fields: [buildId, projectId], references: [id, projectId])
 
-  projectId String
+  projectId String @unique
   project   Project @relation(fields: [projectId], references: [id])
 
   publishStatus PublishStatus
   updatedAt     DateTime      @db.Timestamptz(3)
 
-  @@id([projectId])
   @@unique([buildId, projectId])
 }
 
 // Dashboard
 view DashboardProject {
-  id                        String                    @id @default(uuid())
+  id                        String                    @unique @default(uuid())
   createdAt                 DateTime                  @default(now()) @db.Timestamptz(3)
   title                     String
   domain                    String
@@ -304,7 +303,7 @@ view DashboardProject {
 }
 
 view ApprovedMarketplaceProduct {
-  projectId          String  @id
+  projectId          String  @unique
   marketplaceProduct String
   authorizationToken String?
 }
