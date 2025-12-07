@@ -56,5 +56,22 @@ services:
     condition: service_healthy
   restart: always
 
+ postgrest:
+  image: postgrest/postgrest:v12.2.0
+  container_name: webstudio-postgrest
+  depends_on:
+    postgres:
+      condition: service_healthy
+  restart: always
+  environment:
+    PGRST_DB_URI: postgresql://webstudio:rugjaf-zacbo4-fyRpak@postgres:5432/webstudio
+    PGRST_DB_SCHEMAS: public
+    PGRST_DB_ANON_ROLE: webstudio
+    PGRST_JWT_SECRET: jwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecret
+    PGRST_DB_USE_LEGACY_GUCS: "false"
+    PGRST_APP_SETTINGS_JWT_SECRET: jwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecret
+  ports:
+    - "3000:3000"
+
 volumes:
  postgres_data:
