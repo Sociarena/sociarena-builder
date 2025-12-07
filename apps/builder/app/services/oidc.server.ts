@@ -1,6 +1,13 @@
 import * as client from "openid-client";
 import env from "~/env/env.server";
 
+const getRedirectUri = (): string => {
+  if (!env.OIDC_REDIRECT_URI) {
+    throw new Error("Missing OIDC_REDIRECT_URI configuration");
+  }
+  return env.OIDC_REDIRECT_URI;
+};
+
 let cachedConfig: client.Configuration | null = null;
 
 export interface OIDCProfile {
@@ -80,11 +87,20 @@ export const handleCallback = async (
   const currentUrl = new URL(callbackUrl);
 
   // authorizationCodeGrant validates the response and exchanges the code for tokens
-  const tokens = await client.authorizationCodeGrant(config, currentUrl, {
-    pkceCodeVerifier: codeVerifier,
-    expectedNonce: nonce,
-    expectedState: state,
-  });
+  const tokens = await client.authorizationCodeGrant(
+    config,
+    currentUrl,
+    {
+      pkceCodeVerifier: codeVerifier,
+      expectedNonce: nonce,
+      expectedState: state,
+      idTokenExpected: true,
+    },
+    {
+      // redirect_uri is required for the token exchange
+      redirectUri: getRedirectUri(),
+    }
+  );
 
   // Get ID token claims
   const claims = tokens.claims();
