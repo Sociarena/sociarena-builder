@@ -5,11 +5,11 @@ WS_NAME="@webstudio-is/builder"
 APP_DIR="/app" 
 BUILD_DIR="${APP_DIR}/apps/builder/build" 
 
-echo "í ½í´Ž Checking build directory: ${BUILD_DIR}"
+echo "Checking build directory: ${BUILD_DIR}"
 
 # (1) S'il n'y a pas encore de build, lance le build (builder + deps)
 if [ ! -d "${BUILD_DIR}" ] || [ -z "$(ls -A "${BUILD_DIR}" 2>/dev/null)" ]; then 
-  echo "âš ï¸ No build found. Building ${WS_NAME} (and deps)â€¦" 
+  echo "No build found. Building ${WS_NAME} (and deps)"
   pnpm -r --filter "${WS_NAME}..." run build 
 fi
 
@@ -28,14 +28,14 @@ else
 fi
  
 if [ -z "${SSR_ENTRY}" ] || [ ! -f "${SSR_ENTRY}" ]; then 
-  echo "âŒ Remix server entry not found." 
-  echo "í ½í³‚ Current build tree:"
+  echo "Remix server entry not found."
+  echo "Current build tree:"
   find "${BUILD_DIR}" -maxdepth 3 -type d -print 
-  echo "í ½í·‚ Files under build/server:" 
+  echo "Files under build/server:"
   find "${BUILD_DIR}/server" -maxdepth 3 -type f -name "index.js" -print 2>/dev/null || true 
   exit 1
 fi
  
-echo "âœ… Using server entry: ${SSR_ENTRY}" 
-echo "í ½íº€ Starting remix-serveâ€¦"
+echo "Using server entry: ${SSR_ENTRY}"
+echo "Starting remix-server"
 exec pnpm --filter "${WS_NAME}" exec remix-serve "${SSR_ENTRY}"

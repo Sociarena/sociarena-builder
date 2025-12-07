@@ -10,106 +10,47 @@
   }
   a.w-element {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
   }
   body.w-body {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     margin: 0;
   }
   h1.w-heading {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
   }
   h3.w-heading {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
   }
   div.w-box {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
   }
   p.w-paragraph {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
   }
   img.w-image {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
     max-width: 100%;
     display: block;
     height: auto;
   }
   a.w-link {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
     display: inline-block;
   }
   div.w-text {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
     min-height: 1em;
   }
   div.w-accordion {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
   }
   div.w-item {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
   }
   h3.w-item-header {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
     margin-top: 0px;
     margin-bottom: 0px;
   }
@@ -121,7 +62,7 @@
     text-transform: none;
     background-color: transparent;
     background-image: none;
-    border: 0px solid rgba(226, 232, 240, 1);
+    border: 0px solid rgb(226 232 240 / 1);
     margin: 0;
     padding: 0px;
   }
@@ -132,27 +73,12 @@
   }
   div.w-item-content {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
   }
   form.w-webhook-form {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
   }
   label.w-input-label {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
     display: block;
   }
   input.w-text-input {
@@ -160,10 +86,6 @@
     font-size: 100%;
     line-height: 1.15;
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
     border-top-style: solid;
     border-right-style: solid;
     border-bottom-style: solid;
@@ -176,10 +98,6 @@
     font-size: 100%;
     line-height: 1.15;
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
     border-top-style: solid;
     border-right-style: solid;
     border-bottom-style: solid;
@@ -189,11 +107,6 @@
   }
   div.w-text-animation {
     box-sizing: border-box;
-    border-top-width: 1px;
-    border-right-width: 1px;
-    border-bottom-width: 1px;
-    border-left-width: 1px;
-    outline-width: 1px;
   }
 }
 @media all {
@@ -227,8 +140,8 @@
   .cielobv {
     padding: 16px;
   }
-  .c2onvcp {
-    border-bottom: 1px solid rgba(226, 232, 240, 1);
+  .c6gjj8k {
+    border-bottom: 1px solid rgb(226 232 240 / 1);
   }
   .chhejm9 {
     flex-shrink: 1;
@@ -311,17 +224,17 @@
   .cc5h0no {
     font-size: 1em;
   }
-  .coklr1z {
-    background-color: rgba(251, 247, 3, 1);
+  .c620822 {
+    background-color: rgb(251 247 3 / 1);
   }
-  .c1cqkpk9 {
-    background-color: rgba(89, 250, 2, 1);
+  .ch21dzk {
+    background-color: rgb(89 250 2 / 1);
   }
-  .ccxj65f {
-    background-color: rgba(2, 250, 168, 1);
+  .c44hi06 {
+    background-color: rgb(2 250 168 / 1);
   }
-  .c1a2hnxl {
-    background-color: rgba(2, 139, 250, 1);
+  .cno1tjk {
+    background-color: rgb(2 139 250 / 1);
   }
   .c1m04i8w {
     height: 100dvh;
