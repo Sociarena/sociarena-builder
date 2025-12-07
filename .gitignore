@@ -32,7 +32,7 @@ yarn-error.log*
 # local env files
 # .env
 .env.development
-.env.local
+apps/builder/.env.local
 .env.development.local
 .env.test.local
 .env.production.local
@@ -54,7 +54,7 @@ tsconfig.tsbuildinfo
 
 # to save thunder https://marketplace.visualstudio.com/items?itemName=rangav.vscode-thunder-client files
 .thunder
-.env*.local
+apps/builder/.env.local
 
 # wrangler builds
 dist
