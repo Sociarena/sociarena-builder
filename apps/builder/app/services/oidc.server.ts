@@ -84,7 +84,16 @@ export const handleCallback = async (
 ): Promise<OIDCProfile> => {
   const config = await getOIDCConfig();
 
-  const currentUrl = new URL(callbackUrl);
+  const redirectUri = getRedirectUri();
+
+  // When running behind a reverse proxy, request.url may contain the internal URL
+  // (e.g., http://localhost:3000/...) instead of the public URL.
+  // We need to use the configured redirect URI origin with the current URL's query params.
+  const incomingUrl = new URL(callbackUrl);
+  const configuredUrl = new URL(redirectUri);
+  const currentUrl = new URL(
+    `${configuredUrl.origin}${configuredUrl.pathname}${incomingUrl.search}`
+  );
 
   // authorizationCodeGrant validates the response and exchanges the code for tokens
   const tokens = await client.authorizationCodeGrant(
@@ -98,7 +107,7 @@ export const handleCallback = async (
     },
     {
       // redirect_uri is required for the token exchange
-      redirectUri: getRedirectUri(),
+      redirectUri,
     }
   );
 
