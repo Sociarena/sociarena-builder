@@ -9,13 +9,13 @@ COPY patches ./patches
 COPY apps ./apps 
 COPY packages ./packages
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile && npm run migrations migrate
 
-RUN apk add --no-cache openssl && \ 
-    mkdir -p /app/https && \ 
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \ 
-      -keyout /app/https/privkey.pem \ 
-      -out /app/https/fullchain.pem \ 
+RUN apk add --no-cache openssl && \
+    mkdir -p /app/https && \
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout /app/https/privkey.pem \
+      -out /app/https/fullchain.pem \
       -subj "/CN=localhost"
 
 ENV HTTPS_DISABLE=true 
