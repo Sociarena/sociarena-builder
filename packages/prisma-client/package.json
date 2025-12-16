@@ -10,9 +10,9 @@
     "migrations": "./migrations-cli/cli.ts"
   },
   "devDependencies": {
-    "@prisma/client": "7.1.0",
+    "@prisma/client": "^6.2.0",
     "@webstudio-is/tsconfig": "workspace:*",
-    "prisma": "7.1.0",
+    "prisma": "^6.2.0",
     "zod": "^3.24.2"
   },
   "exports": {
