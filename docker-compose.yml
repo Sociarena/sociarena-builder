@@ -71,7 +71,7 @@ services:
     PGRST_DB_USE_LEGACY_GUCS: "false"
     PGRST_APP_SETTINGS_JWT_SECRET: jwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecret
   ports:
-    - "3001:3001"
+    - "3001:3000"
 
 volumes:
  postgres_data:
