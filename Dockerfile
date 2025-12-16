@@ -9,7 +9,8 @@ COPY patches ./patches
 COPY apps ./apps 
 COPY packages ./packages
 
-RUN pnpm install --frozen-lockfile && npm run migrations migrate
+RUN pnpm install --frozen-lockfile
+RUN npm run migrations migrate
 
 RUN apk add --no-cache openssl && \
     mkdir -p /app/https && \
