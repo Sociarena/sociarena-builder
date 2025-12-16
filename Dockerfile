@@ -31,7 +31,7 @@ COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 ENV NODE_ENV=production 
 ENV HOST=0.0.0.0 
-ENV PORT=3000 
+ENV PORT=3000
 ENV PUBLIC_URL=https://builder.sociarena.com
 
 CMD ["/app/start.sh"]
