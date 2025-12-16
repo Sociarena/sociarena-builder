@@ -9,15 +9,14 @@ COPY patches ./patches
 COPY apps ./apps 
 COPY packages ./packages
 
+RUN pnpm install --frozen-lockfile
+
 RUN apk add --no-cache openssl && \
     mkdir -p /app/https && \
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
       -keyout /app/https/privkey.pem \
       -out /app/https/fullchain.pem \
       -subj "/CN=localhost"
-
-RUN pnpm install --frozen-lockfile
-RUN npm run migrations migrate
 
 ENV HTTPS_DISABLE=true 
 RUN pnpm -r --filter "@webstudio-is/builder..." run build
