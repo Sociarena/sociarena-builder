@@ -21,7 +21,7 @@ services:
   build: .
   container_name: webstudio-builder
   env_file:
-    - /apps/builder/.env
+    - apps/builder/.env
   ports:
    - "3000:3000"
   expose:
