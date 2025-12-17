@@ -46,7 +46,11 @@ services:
     # CORS and Security
     - ALLOWED_ORIGINS=https://builder.sociarena.com
     - TRUST_PROXY=true
-
+    
+      # PostgREST configuration
+    - POSTGREST_URL=http://postgrest:3000
+    - POSTGREST_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttZHBpeHpvcWlpcmJtcGRpcHB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE2NjYzMz
+      Y0MjgsImV4cCI6MTk4MTkxMjQyOH0.jjeYvTDrWP9pV7dfZr6fptualNQ3aR13kuPhvT25Sso
   ports:
    - "3000:3000"
   expose:
