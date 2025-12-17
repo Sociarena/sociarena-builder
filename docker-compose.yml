@@ -20,37 +20,8 @@ services:
  webstudio:
   build: .
   container_name: webstudio-builder
-  environment:
-    - NODE_ENV=production
-    - HOST=0.0.0.0
-    - PORT=3000
-    - DATABASE_URL=postgresql://webstudio:rugjaf-zacbo4-fyRpak@postgres:5432/webstudio
-
-    # Base URLs
-    - PUBLIC_URL=https://builder.sociarena.com
-    - APP_URL=https://builder.sociarena.com
-    - BASE_URL=https://builder.sociarena.com
-
-    # Session secrets (generate with: openssl rand -base64 32)
-    - SESSION_SECRET=cYNMvnFYNvHH6l4r18l+8dtuyghWbG9hCA/Q3BuAwoU=
-    - COOKIE_SECRET=0SDri/F28b8R0ud3eOfzlg9/OpIroWjey98ytac9y7Q=
-    - ENCRYPTION_SECRET=cYNMvnFYNvHH6l4r18l+8dtuyghWbG9hCA/Q3BuAwoU=
-
-    # OIDC Configuration
-    - OIDC_ISSUER=https://login.infomaniak.com
-    - OIDC_CLIENT_ID=e97a8676-fc42-471f-8506-111f526f96ed
-    - OIDC_CLIENT_SECRET=vwxhJkGe2tXh5DqAri88I4xmnfTa2lGem3dzvECanDAA72Nz64i0YuGZB7y2QQsb
-    - OIDC_REDIRECT_URI=https://builder.sociarena.com/auth/infomaniak/callback
-    - OIDC_SCOPES=openid profile email
-
-    # CORS and Security
-    - ALLOWED_ORIGINS=https://builder.sociarena.com
-    - TRUST_PROXY=true
-    
-      # PostgREST configuration
-    - POSTGREST_URL=http://postgrest:3000
-    - POSTGREST_API_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttZHBpeHpvcWlpcmJtcGRpcHB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE2NjYzMz
-      Y0MjgsImV4cCI6MTk4MTkxMjQyOH0.jjeYvTDrWP9pV7dfZr6fptualNQ3aR13kuPhvT25Sso
+  env_file:
+    - /apps/builder/.env
   ports:
    - "3000:3000"
   expose:
@@ -68,7 +39,7 @@ services:
       condition: service_healthy
   restart: always
   environment:
-    PGRST_DB_URI: postgresql://webstudio:rugjaf-zacbo4-fyRpak@postgres:5432/webstudio
+    PGRST_DB_URI: postgresql://webstudio:rugjaf-zacbo4-fyRpak@webstudio-postgres:5432/webstudio
     PGRST_DB_SCHEMAS: public
     PGRST_DB_ANON_ROLE: webstudio
     PGRST_JWT_SECRET: jwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecret
