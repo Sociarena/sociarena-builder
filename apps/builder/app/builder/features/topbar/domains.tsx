@@ -13,12 +13,7 @@ import {
   toast,
 } from "@webstudio-is/design-system";
 import type { Project } from "@webstudio-is/project";
-import {
-  AlertIcon,
-  CheckCircleIcon,
-  ExternalLinkIcon,
-  CopyIcon,
-} from "@webstudio-is/icons";
+import { AlertIcon, CheckCircleIcon, CopyIcon } from "@webstudio-is/icons";
 import { CollapsibleDomainSection } from "./collapsible-domain-section";
 import {
   Fragment,
@@ -32,11 +27,11 @@ import {
 import { Entri } from "./entri";
 import { nativeClient } from "~/shared/trpc/trpc-client";
 import { useStore } from "@nanostores/react";
-import { $publisherHost } from "~/shared/nano-states";
+import { $publisherHost } from "~/shared/sync/data-stores";
 import { extractCname } from "./cname";
 import { useEffectEvent } from "~/shared/hook-utils/effect-event";
 import { DomainCheckbox } from "./domain-checkbox";
-import { CopyToClipboard } from "~/builder/shared/copy-to-clipboard";
+import { CopyToClipboard } from "~/shared/copy-to-clipboard";
 import { RelativeTime } from "~/builder/shared/relative-time";
 
 export type Domain = Project["domainsVirtual"][number];
@@ -326,20 +321,14 @@ const DomainItem = ({
             projectDomain={projectDomain}
           />
 
-          <Tooltip content={`Proceed to ${projectDomain.domain}`}>
-            <IconButton
-              type="button"
-              tabIndex={-1}
-              disabled={status !== "VERIFIED_ACTIVE"}
-              onClick={(event) => {
-                const url = new URL(`https://${projectDomain.domain}`);
-                window.open(url.href, "_blank");
-                event.preventDefault();
-              }}
-            >
-              <ExternalLinkIcon />
+          <CopyToClipboard
+            text={`https://${projectDomain.domain}`}
+            copyText={`Copy link: https://${projectDomain.domain}`}
+          >
+            <IconButton type="button" tabIndex={-1}>
+              <CopyIcon />
             </IconButton>
-          </Tooltip>
+          </CopyToClipboard>
         </Grid>
       }
     >

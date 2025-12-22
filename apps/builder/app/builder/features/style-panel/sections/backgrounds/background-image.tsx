@@ -1,17 +1,11 @@
 import type { StyleValue } from "@webstudio-is/css-engine";
-import {
-  Flex,
-  theme,
-  FloatingPanelProvider,
-  Grid,
-  Box,
-} from "@webstudio-is/design-system";
+import { Flex, theme, Grid, Box } from "@webstudio-is/design-system";
 import { useRef, useCallback } from "react";
 import { ImageControl } from "../../controls";
 import { PropertyInlineLabel } from "../../property-label";
 import { propertyDescriptions } from "@webstudio-is/css-data";
 import { BackgroundCodeEditor } from "./background-code-editor";
-import { $assets } from "~/shared/nano-states";
+import { $assets } from "~/shared/sync/data-stores";
 
 const isAbsoluteURL = (value: string) => {
   try {
@@ -72,10 +66,12 @@ export const BackgroundImage = ({ index }: { index: number }) => {
           label="Image"
           description={propertyDescriptions.backgroundImage}
         />
-        <Box css={{ gridColumn: "span 2" }}>
-          <FloatingPanelProvider container={elementRef}>
-            <ImageControl property="background-image" index={index} />
-          </FloatingPanelProvider>
+        <Box
+          css={{ gridColumn: "span 2" }}
+          ref={elementRef}
+          data-floating-panel-container
+        >
+          <ImageControl property="background-image" index={index} />
         </Box>
       </Grid>
       <BackgroundCodeEditor index={index} onValidate={handleValidate} />

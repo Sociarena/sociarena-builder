@@ -102,7 +102,24 @@ export const createPubsub = <PublishMap>() => {
     const action = unwrapAction(event.data);
     const type = action.type;
     // Execute all updates within a single batch to improve performance
-    batchUpdate(() => emitter.emit(type, action.payload));
+    batchUpdate(() => {
+      emitter.emit(type, action.payload);
+
+      // Also emit command-specific events for type-safe subscriptions
+      if (
+        type === "command" &&
+        action.payload &&
+        typeof action.payload === "object" &&
+        "name" in action.payload
+      ) {
+        const commandName = (action.payload as { name: string }).name;
+        // Pass the full payload to command-specific subscribers
+        emitter.emit(
+          `command:${commandName}` as keyof PublishMap,
+          action.payload
+        );
+      }
+    });
   };
 
   window.addEventListener("message", handleMessage, false);

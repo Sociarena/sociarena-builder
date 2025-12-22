@@ -1,6 +1,6 @@
-import { groupBreakpoints } from "./group-breakpoints";
+import { groupBreakpoints } from "../breakpoints-utils";
 import { $selectedBreakpointId, $breakpoints } from "../nano-states";
-import { setCanvasWidth } from "~/builder/features/breakpoints";
+import { setCanvasWidth } from "~/builder/shared/calc-canvas-width";
 
 /**
  * Order number starts with 1 and covers all existing breakpoints

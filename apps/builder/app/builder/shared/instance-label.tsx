@@ -28,8 +28,10 @@ import {
 import {
   elementComponent,
   parseComponentName,
+  ROOT_INSTANCE_ID,
   type Instance,
 } from "@webstudio-is/sdk";
+import { $instances } from "~/shared/sync/data-stores";
 import { $registeredComponentMetas } from "~/shared/nano-states";
 import { humanizeString } from "~/shared/string-utils";
 
@@ -105,20 +107,32 @@ const getLabelFromComponentName = (component: Instance["component"]) => {
 };
 
 export const getInstanceLabel = (
-  instance: InstanceLike,
-  meta: undefined | { label?: string }
-) => {
-  if (instance.label) {
-    return instance.label;
+  instanceOrInstanceId: InstanceLike | string
+): string => {
+  if (typeof instanceOrInstanceId === "string") {
+    if (instanceOrInstanceId === ROOT_INSTANCE_ID) {
+      return "Root";
+    }
+    const instance = $instances.get().get(instanceOrInstanceId);
+    if (instance) {
+      return getInstanceLabel(instance);
+    }
+    return "Unknown";
   }
-  if (instance.component === elementComponent && instance.tag) {
-    return `<${instance.tag}>`;
-  }
-  return meta?.label || getLabelFromComponentName(instance.component);
-};
 
-export const InstanceLabel = ({ instance }: { instance: InstanceLike }) => {
-  const metas = useStore($registeredComponentMetas);
-  const meta = metas.get(instance.component);
-  return getInstanceLabel(instance, meta);
+  if (instanceOrInstanceId.label) {
+    return instanceOrInstanceId.label;
+  }
+  if (
+    instanceOrInstanceId.component === elementComponent &&
+    instanceOrInstanceId.tag
+  ) {
+    return `<${instanceOrInstanceId.tag}>`;
+  }
+  const meta = $registeredComponentMetas
+    .get()
+    .get(instanceOrInstanceId.component);
+  return (
+    meta?.label || getLabelFromComponentName(instanceOrInstanceId.component)
+  );
 };

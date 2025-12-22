@@ -10,6 +10,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   type RefObject,
 } from "react";
 import * as Primitive from "@radix-ui/react-dialog";
@@ -23,6 +24,8 @@ import { Button } from "./button";
 import { XIcon, MaximizeIcon, MinimizeIcon } from "@webstudio-is/icons";
 import { Separator } from "./separator";
 import { Text } from "./text";
+
+const DIALOG_TITLE_HEIGHT = 40;
 
 export const DialogTrigger = Primitive.Trigger;
 
@@ -39,7 +42,6 @@ if (placeholderImage) {
 }
 
 const panelStyle = css({
-  border: `1px solid ${theme.colors.borderMain}`,
   boxShadow: theme.shadows.panelSectionDropShadow,
   background: theme.colors.backgroundPanel,
   borderRadius: theme.borderRadius[7],
@@ -137,10 +139,183 @@ type Point = { x: number; y: number };
 type Size = { width: number; height: number };
 type Rect = Point & Size;
 
+type Tolerance = {
+  horizontal?: number;
+  vertical?: number;
+};
+
+// Utility: Calculate inset CSS string from boundary rect
+const calculateInset = (
+  bounds: Rect,
+  windowWidth: number,
+  windowHeight: number
+): string => {
+  return `${bounds.y}px ${windowWidth - bounds.x - bounds.width}px ${windowHeight - bounds.y - bounds.height}px ${bounds.x}px`;
+};
+
+// Utility: Calculate centered dialog position
+const calculateCenteredPosition = (
+  bounds: Rect,
+  width?: number,
+  height?: number
+): { top: number; left: number } => {
+  return {
+    top: Math.max(bounds.y, bounds.y + bounds.height / 2 - (height ?? 0) / 2),
+    left: Math.max(bounds.x, bounds.x + bounds.width / 2 - (width ?? 0) / 2),
+  };
+};
+
+// Utility: Calculate dialog style based on positioning mode
+const calculateDialogStyle = (
+  bounds: Rect,
+  options: {
+    isMaximized: boolean;
+    width?: number;
+    height?: number;
+    minWidth?: number;
+    minHeight?: number;
+    windowWidth: number;
+    windowHeight: number;
+  }
+): CSSProperties => {
+  const {
+    isMaximized,
+    width,
+    height,
+    minWidth,
+    minHeight,
+    windowWidth,
+    windowHeight,
+  } = options;
+
+  if (isMaximized) {
+    return {
+      top: bounds.y,
+      left: bounds.x,
+      width: bounds.width,
+      height: bounds.height,
+    };
+  }
+
+  // If both width and height are specified, use centered positioning
+  if (width && height) {
+    const centered = calculateCenteredPosition(bounds, width, height);
+    return {
+      top: centered.top,
+      left: centered.left,
+      width,
+      height,
+      ...(minWidth && { minWidth }),
+      ...(minHeight && { minHeight }),
+    };
+  }
+
+  // Otherwise use inset-based centering with margin: auto
+  const style: CSSProperties = {
+    inset: calculateInset(bounds, windowWidth, windowHeight),
+    margin: "auto",
+    maxWidth: bounds.width,
+    maxHeight: bounds.height,
+  };
+
+  if (width !== undefined) {
+    style.width = width;
+  }
+  if (height !== undefined) {
+    style.height = height;
+  }
+  if (minWidth !== undefined) {
+    style.minWidth = minWidth;
+  }
+  if (minHeight !== undefined) {
+    style.minHeight = minHeight;
+  }
+
+  return style;
+};
+
+// Utility: Apply boundary constraints to dialog position and size
+const applyBoundaries = (
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  bounds: Rect,
+  tolerance?: Tolerance
+): Rect => {
+  const horizontalTolerance = tolerance?.horizontal ?? 0;
+  const verticalTolerance = tolerance?.vertical ?? 0;
+
+  const minX = bounds.x - horizontalTolerance;
+  const minY = bounds.y - verticalTolerance;
+  const maxWidth = bounds.width + horizontalTolerance * 2;
+  const maxHeight = bounds.height + verticalTolerance * 2;
+
+  const constrainedWidth = Math.min(width, maxWidth);
+  const constrainedHeight = Math.min(height, maxHeight);
+
+  const maxX = bounds.x + bounds.width + horizontalTolerance - constrainedWidth;
+  const maxY = bounds.y + bounds.height + verticalTolerance - constrainedHeight;
+
+  return {
+    x: Math.max(minX, Math.min(x, maxX)),
+    y: Math.max(minY, Math.min(y, maxY)),
+    width: constrainedWidth,
+    height: constrainedHeight,
+  };
+};
+
+const useBoundary = () => {
+  const [boundaryRect, setBoundaryRect] = useState<Rect | undefined>(undefined);
+
+  useEffect(() => {
+    const boundaryElement = document.querySelector(
+      "[data-dialog-boundary]"
+    ) as HTMLElement | null;
+
+    if (!boundaryElement) {
+      setBoundaryRect(undefined);
+      return;
+    }
+
+    const updateBoundary = () => {
+      const rect = boundaryElement.getBoundingClientRect();
+      setBoundaryRect({
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      });
+    };
+
+    // Initial measurement
+    updateBoundary();
+
+    const resizeObserver = new ResizeObserver(updateBoundary);
+    resizeObserver.observe(boundaryElement);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
+
+  return useMemo(
+    () =>
+      boundaryRect ?? {
+        x: 0,
+        y: 0,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
+    [boundaryRect]
+  );
+};
+
 type UseDraggableProps = {
   isMaximized: boolean;
   minWidth?: number;
   minHeight?: number;
+  boundaryTolerance?: { horizontal?: number; vertical?: number };
 } & Partial<Rect>;
 
 const useDraggable = ({
@@ -149,10 +324,12 @@ const useDraggable = ({
   minHeight,
   minWidth,
   isMaximized,
+  boundaryTolerance,
   ...props
 }: UseDraggableProps) => {
   const [x, setX] = useState(props.x);
   const [y, setY] = useState(props.y);
+  const bounds = useBoundary();
 
   const lastDragDataRef = useRef<
     | undefined
@@ -165,50 +342,108 @@ const useDraggable = ({
   const ref = useRef<HTMLDivElement | null>(null);
 
   const calcStyle = useCallback(() => {
-    const style: CSSProperties = isMaximized
-      ? {
-          top: "calc(20px + 50% - 50vh)",
-          left: "calc(20px + 50% - 50vw)",
-          width: "calc(100vw - 40px)",
-          height: "calc(100vh - 40px)",
-        }
-      : !width || !height
-        ? {
-            inset: 0,
-            margin: "auto",
-            width,
-            height,
-          }
-        : {
-            top: `max(20px, calc(50% - ${height / 2}px))`,
-            bottom: `max(20px, calc(50% - ${height / 2}px))`,
-            left: `max(20px, calc(50% - ${width / 2}px))`,
-            right: `max(20px, calc(50% - ${width / 2}px))`,
-            width,
-            height,
-          };
-
-    if (minWidth !== undefined) {
-      style.minWidth = minWidth;
-    }
-    if (minHeight !== undefined) {
-      style.minHeight = minHeight;
-    }
+    const style = calculateDialogStyle(bounds, {
+      isMaximized,
+      width,
+      height,
+      minWidth,
+      minHeight,
+      windowWidth: window.innerWidth,
+      windowHeight: window.innerHeight,
+    });
 
     if (isMaximized === false) {
-      if (x !== undefined) {
-        style.left = x;
+      if (x !== undefined && y !== undefined) {
+        // Get actual rendered dimensions if width/height not specified
+        const actualWidth = width ?? ref.current?.offsetWidth ?? bounds.width;
+        const actualHeight =
+          height ?? ref.current?.offsetHeight ?? bounds.height;
+
+        const constrained = applyBoundaries(
+          x,
+          y,
+          actualWidth,
+          actualHeight,
+          bounds,
+          boundaryTolerance
+        );
+
+        style.left = constrained.x;
+        style.top = constrained.y;
+        if (width !== undefined) {
+          style.width = constrained.width;
+        }
+        if (height !== undefined) {
+          style.height = constrained.height;
+        }
         style.right = "auto";
-        style.margin = 0;
-      }
-      if (y !== undefined) {
-        style.top = y;
         style.bottom = "auto";
         style.margin = 0;
+      } else if (x !== undefined) {
+        const actualWidth = width ?? ref.current?.offsetWidth ?? bounds.width;
+        const actualHeight =
+          height ?? ref.current?.offsetHeight ?? bounds.height;
+
+        const constrained = applyBoundaries(
+          x,
+          0,
+          actualWidth,
+          actualHeight,
+          bounds,
+          boundaryTolerance
+        );
+
+        style.left = constrained.x;
+        if (width !== undefined) {
+          style.width = constrained.width;
+        }
+        if (height !== undefined) {
+          style.height = constrained.height;
+        }
+        style.right = "auto";
+        style.margin = 0;
+      } else if (y !== undefined) {
+        const actualWidth = width ?? ref.current?.offsetWidth ?? bounds.width;
+        const actualHeight =
+          height ?? ref.current?.offsetHeight ?? bounds.height;
+
+        const constrained = applyBoundaries(
+          0,
+          y,
+          actualWidth,
+          actualHeight,
+          bounds,
+          boundaryTolerance
+        );
+
+        style.top = constrained.y;
+        if (width !== undefined) {
+          style.width = constrained.width;
+        }
+        if (height !== undefined) {
+          style.height = constrained.height;
+        }
+        style.bottom = "auto";
+        style.margin = 0;
+      } else {
+        // Only apply max constraints when not positioned
+        style.maxWidth = bounds.width;
+        style.maxHeight = bounds.height;
       }
     }
+
     return style;
-  }, [x, y, width, height, isMaximized, minWidth, minHeight]);
+  }, [
+    x,
+    y,
+    width,
+    height,
+    isMaximized,
+    minWidth,
+    minHeight,
+    bounds,
+    boundaryTolerance,
+  ]);
 
   const [style, setStyle] = useState(calcStyle());
 
@@ -258,14 +493,13 @@ const useDraggable = ({
     ) {
       return;
     }
+
     const { rect, point } = lastDragDataRef.current;
     const movementX = point.x - event.pageX;
     const movementY = point.y - event.pageY;
-    let left = Math.max(rect.x - movementX, 0);
-    left = Math.min(left, window.innerWidth - rect.width);
-    let top = Math.max(rect.y - movementY, 0);
-    // We want some part of the dialog to be visible but otherwise let it go off screen.
-    top = Math.min(top, window.innerHeight - 40);
+    // Allow dragging anywhere without constraints
+    const left = rect.x - movementX;
+    const top = rect.y - movementY;
     target.style.left = `${left}px`;
     target.style.top = `${top}px`;
   };
@@ -277,8 +511,23 @@ const useDraggable = ({
       return;
     }
     const rect = target.getBoundingClientRect();
-    setX(rect.x);
-    setY(rect.y);
+
+    // Apply constraints to snap to the closest valid position
+    let constrainedX = Math.max(rect.x, bounds.x);
+    constrainedX = Math.min(constrainedX, bounds.x + bounds.width - rect.width);
+    let constrainedY = Math.max(rect.y, bounds.y);
+    // Keep at least title visible at the bottom
+    constrainedY = Math.min(
+      constrainedY,
+      bounds.y + bounds.height - DIALOG_TITLE_HEIGHT
+    );
+
+    setX(constrainedX);
+    setY(constrainedY);
+
+    // Apply the constrained position immediately
+    target.style.left = `${constrainedX}px`;
+    target.style.top = `${constrainedY}px`;
   };
 
   return {
@@ -325,6 +574,7 @@ const ContentContainer = forwardRef(
       y,
       minWidth,
       minHeight,
+      boundaryTolerance,
       ...props
     }: ComponentProps<typeof Primitive.Content> &
       Partial<UseDraggableProps> & {
@@ -341,6 +591,7 @@ const ContentContainer = forwardRef(
       minWidth,
       minHeight,
       isMaximized,
+      boundaryTolerance,
     });
     const setPointerEvents = useSetPointerEvents(ref);
 
@@ -433,7 +684,7 @@ export const DialogTitleActions = ({ children }: { children: ReactNode }) => {
 export const DialogActions = ({ children }: { children: ReactNode }) => {
   return (
     <Flex
-      gap="1"
+      gap="2"
       css={{
         padding: theme.panel.padding,
         // Making sure the tab order is the last item first.
@@ -475,3 +726,11 @@ const contentStyle = css(panelStyle, {
     },
   },
 });
+
+// Export utilities for testing
+export const __testing__ = {
+  calculateInset,
+  calculateCenteredPosition,
+  calculateDialogStyle,
+  applyBoundaries,
+};

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import warnOnce from "warn-once";
 import type { CSS } from "./stitches.config";
 
@@ -125,7 +125,9 @@ export const useResize = ({
         isResizingRef.current = true;
         onResizeStartRef.current?.(entries);
       }
-      onResizeRef.current?.(entries);
+      requestAnimationFrame(() => {
+        onResizeRef.current?.(entries);
+      });
       clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
         onResizeEndRef.current?.(entries);
@@ -147,3 +149,17 @@ export const truncate = (): CSS => ({
   textOverflow: "ellipsis",
   overflow: "hidden",
 });
+
+export const useDebounceEffect = () => {
+  const [updateCallback, setUpdateCallback] = useState(() => () => {
+    /* empty */
+  });
+  useEffect(() => {
+    // Because of how our styles works we need to update after React render to be sure that
+    // all styles are applied
+    updateCallback();
+  }, [updateCallback]);
+  return useCallback((callback: () => void) => {
+    setUpdateCallback(() => callback);
+  }, []);
+};

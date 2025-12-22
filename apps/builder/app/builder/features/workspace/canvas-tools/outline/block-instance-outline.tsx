@@ -41,7 +41,7 @@ import { useEffectEvent } from "~/shared/hook-utils/effect-event";
 import { getInstancePath } from "~/shared/awareness";
 import { insertTemplateAt } from "./block-utils";
 import { Outline } from "./outline";
-import { applyScale } from "./apply-scale";
+import { applyScale } from "../apply-scale";
 import {
   getInstanceLabel,
   InstanceIcon,
@@ -106,7 +106,7 @@ export const TemplatesMenu = ({
   const menuItems = templates?.map(([template, templateSelector]) => ({
     id: template.id,
     icon: <InstanceIcon instance={{ component: template.component }} />,
-    title: getInstanceLabel(template, undefined),
+    title: getInstanceLabel(template),
     value: templateSelector,
   }));
 

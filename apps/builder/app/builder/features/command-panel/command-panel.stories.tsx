@@ -9,11 +9,9 @@ import {
   $registeredComponentMetas,
 } from "~/shared/nano-states";
 import { $awareness } from "~/shared/awareness";
-import { registerContainers } from "~/shared/sync";
-import {
-  CommandPanel as CommandPanelComponent,
-  openCommandPanel,
-} from "./command-panel";
+import { registerContainers } from "~/shared/sync/sync-stores";
+import { CommandPanel as CommandPanelComponent } from "./command-panel";
+import { openCommandPanel } from "./command-state";
 
 const meta: Meta = {
   title: "Command Panel",

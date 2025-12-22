@@ -1,9 +1,6 @@
 import { useEffect, useRef } from "react";
 import { getStyleDeclKey, type StyleDecl } from "@webstudio-is/sdk";
-import {
-  FloatingPanel,
-  FloatingPanelProvider,
-} from "@webstudio-is/design-system";
+import { FloatingPanel } from "@webstudio-is/design-system";
 import { createDefaultPages } from "@webstudio-is/project-build";
 import {
   $breakpoints,
@@ -13,7 +10,7 @@ import {
   $styles,
   $styleSourceSelections,
 } from "~/shared/nano-states";
-import { registerContainers } from "~/shared/sync";
+import { registerContainers } from "~/shared/sync/sync-stores";
 import { BackgroundContent } from "./background-content";
 import { $awareness } from "~/shared/awareness";
 import { useComputedStyleDecl } from "../../shared/model";
@@ -68,17 +65,19 @@ const BackgroundStory = ({ styleValue }: { styleValue: StyleValue }) => {
 
   return (
     <>
-      <div ref={elementRef} style={{ marginLeft: "400px" }}></div>
+      <div
+        ref={elementRef}
+        style={{ marginLeft: "400px" }}
+        data-floating-panel-container
+      ></div>
 
-      <FloatingPanelProvider container={elementRef}>
-        <FloatingPanel
-          open
-          title="Background"
-          content={<BackgroundContent index={0} />}
-        >
-          <button>Trigger</button>
-        </FloatingPanel>
-      </FloatingPanelProvider>
+      <FloatingPanel
+        open
+        title="Background"
+        content={<BackgroundContent index={0} />}
+      >
+        <button>Trigger</button>
+      </FloatingPanel>
     </>
   );
 };

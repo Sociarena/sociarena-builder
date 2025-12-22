@@ -1,13 +1,15 @@
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useRef,
   useState,
+  useCallback,
   type ComponentPropsWithoutRef,
   type Dispatch,
   type SetStateAction,
+  type ComponentProps,
+  type ReactNode,
 } from "react";
 import {
   Command as CommandPrimitive,
@@ -22,15 +24,18 @@ import {
   DialogOverlay,
   DialogContent,
 } from "@radix-ui/react-dialog";
-import { SearchIcon } from "@webstudio-is/icons";
+import { SearchIcon, ChevronLeftIcon } from "@webstudio-is/icons";
 import { styled, theme } from "../stitches.config";
 import { Text, textVariants } from "./text";
-import { Flex } from "./flex";
 import { Button } from "./button";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { Kbd } from "./kbd";
+import { useDebounceEffect } from "../utilities";
+import { Flex } from "./flex";
+import { InputField } from "./input-field";
+import { SmallIconButton } from "./small-icon-button";
 
-const panelWidth = "400px";
+const panelWidth = "500px";
 const itemHeight = "32px";
 const inputBorderBottomSize = "--command-input-border-bottom-width";
 
@@ -64,10 +69,16 @@ const lowerCasedFilter: CommandProps["filter"] = (
     aliases
   );
 
+export type CommandAction = {
+  name: string;
+  label: string;
+};
+
 type CommandState = {
   highlightedGroup: string;
-  actions: string[];
+  actions: CommandAction[];
   actionIndex: number;
+  footerContent: ReactNode;
 };
 
 const CommandContext = createContext<
@@ -77,6 +88,7 @@ const CommandContext = createContext<
     highlightedGroup: "",
     actions: [],
     actionIndex: 0,
+    footerContent: undefined,
   },
   () => {},
 ]);
@@ -86,15 +98,38 @@ export const useSelectedAction = () => {
   return state.actions[state.actionIndex];
 };
 
+export const useResetActionIndex = () => {
+  const [, setState] = useContext(CommandContext);
+  return () => {
+    setState((prev) => ({ ...prev, actionIndex: 0 }));
+  };
+};
+
+const useSetFooterContent = () => {
+  const [, setState] = useContext(CommandContext);
+  return useCallback(
+    (content: ReactNode) => {
+      setState((prev) => ({ ...prev, footerContent: content }));
+    },
+    [setState]
+  );
+};
+
 export const Command = (props: CommandProps) => {
   const state = useState<CommandState>({
     highlightedGroup: "",
     actions: [],
     actionIndex: 0,
+    footerContent: undefined,
   });
   return (
     <CommandContext.Provider value={state}>
-      <StyledCommand loop={true} filter={lowerCasedFilter} {...props} />
+      <StyledCommand
+        disablePointerSelection
+        loop={true}
+        filter={lowerCasedFilter}
+        {...props}
+      />
     </CommandContext.Provider>
   );
 };
@@ -127,48 +162,73 @@ export const CommandDialog = ({
 };
 
 const CommandInputContainer = styled("div", {
-  display: "grid",
-  gridTemplateColumns: `${itemHeight} 1fr max-content`,
-  height: theme.spacing[15],
   borderBottom: `var(${inputBorderBottomSize}) solid ${theme.colors.borderMain}`,
 });
 
-const CommandInputIcon = styled(SearchIcon, {
-  gridColumn: "1 / 2",
-  gridRow: "1 / 2",
-  placeSelf: "center",
+export const CommandSearchIcon = styled(SearchIcon, {
+  display: "flex",
+  width: theme.spacing[11],
   color: theme.colors.foregroundSubtle,
 });
 
-const CommandInputField = styled(CommandPrimitive.Input, {
-  all: "unset",
-  gridColumn: "1 / 3",
-  gridRow: "1 / 2",
-  // add space for icon
-  paddingLeft: itemHeight,
-  paddingRight: theme.spacing[2],
-  color: theme.colors.foregroundMain,
-  ...textVariants.regular,
-  lineHeight: 1,
-  "&::placeholder": {
-    color: theme.colors.foregroundSubtle,
-  },
+export const CommandBackIcon = styled(ChevronLeftIcon, {
+  display: "flex",
+  width: theme.spacing[11],
+  color: theme.colors.foregroundSubtle,
+});
+
+const CommandInputField = styled(InputField, {
+  "--sizes-controlHeight": theme.spacing[15],
+  border: "none",
+  paddingInline: theme.spacing[4],
 });
 
 export const CommandInput = (
-  props: ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
+  props: ComponentProps<typeof InputField> & {
+    action?: CommandAction;
+    onBack?: () => void;
+    onValueChange?: (value: string) => void;
+  }
 ) => {
   const inputRef = useRef<HTMLInputElement>(null);
-  const action = useSelectedAction();
+  const contextAction = useSelectedAction();
+  const {
+    action = contextAction,
+    placeholder = "Type a command or search...",
+    prefix,
+    onBack,
+    value,
+    onValueChange,
+    ref,
+    ...inputProps
+  } = props;
   return (
     <CommandInputContainer>
-      <CommandInputIcon />
       <CommandInputField
-        ref={inputRef}
+        prefix={prefix ?? <CommandSearchIcon />}
+        suffix={
+          action && (
+            <Text
+              color="moreSubtle"
+              css={{ alignSelf: "center", paddingInline: theme.spacing[5] }}
+            >
+              {action.label} <Kbd value={["enter"]} color="moreSubtle" />
+            </Text>
+          )
+        }
+        inputRef={inputRef}
         autoFocus={true}
-        placeholder="Type a command or search..."
-        {...props}
-        onValueChange={(value) => {
+        placeholder={placeholder}
+        value={value}
+        {...inputProps}
+        onKeyDown={(event) => {
+          if (onBack && event.key === "Backspace" && value === "") {
+            event.preventDefault();
+            onBack();
+          }
+          inputProps.onKeyDown?.(event);
+        }}
+        onChange={(event) => {
           // reset scroll whenever search is changed
           requestAnimationFrame(() => {
             inputRef.current
@@ -176,37 +236,16 @@ export const CommandInput = (
               ?.querySelector("[data-radix-scroll-area-viewport]")
               ?.scrollTo(0, 0);
           });
-          props.onValueChange?.(value);
+          onValueChange?.(event.target.value);
         }}
       />
-      <Text
-        variant="labelsTitleCase"
-        color="moreSubtle"
-        css={{ alignSelf: "center", paddingInline: theme.spacing[5] }}
-      >
-        {action} <Kbd value={["enter"]} color="moreSubtle" />
-      </Text>
     </CommandInputContainer>
   );
 };
 
 const ActionsCommand = styled(CommandPrimitive, {});
 
-const useDebounceEffect = () => {
-  const [updateCallback, setUpdateCallback] = useState(() => () => {
-    /* empty */
-  });
-  useEffect(() => {
-    // Because of how our styles works we need to update after React render to be sure that
-    // all styles are applied
-    updateCallback();
-  }, [updateCallback]);
-  return useCallback((callback: () => void) => {
-    setUpdateCallback(() => callback);
-  }, []);
-};
-
-export const CommandFooter = () => {
+export const CommandFooter = ({ children }: { children?: ReactNode }) => {
   const [isActionOpen, setIsActionOpen] = useState(false);
   const scheduleEffect = useDebounceEffect();
 
@@ -221,14 +260,19 @@ export const CommandFooter = () => {
       "[cmdk-group]:has([aria-selected=true])"
     );
     const highlightedGroup = selectedGroup?.getAttribute("data-value") ?? "";
-    const actions =
-      selectedGroup?.getAttribute("data-actions")?.split(",") ?? [];
+    const actionsJson = selectedGroup?.getAttribute("data-actions") ?? "[]";
+    let actions: CommandAction[] = [];
+    try {
+      actions = JSON.parse(actionsJson);
+    } catch {
+      // fallback to empty array if parsing fails
+    }
     setState((prev) => {
       // reset index only when group is changed
       if (prev.highlightedGroup === highlightedGroup) {
         return prev;
       }
-      return { highlightedGroup, actions, actionIndex: 0 };
+      return { ...prev, highlightedGroup, actions, actionIndex: 0 };
     });
   }, [highlightedValue, setState]);
 
@@ -252,12 +296,8 @@ export const CommandFooter = () => {
   }, [setState]);
 
   return (
-    <Flex
-      justify="end"
-      align="center"
-      css={{ height: itemHeight, paddingInline: theme.spacing[3] }}
-      ref={actionsRef}
-    >
+    <CommandGroupFooter ref={actionsRef}>
+      {children || state.footerContent}
       <Popover open={isActionOpen} onOpenChange={setIsActionOpen}>
         <PopoverTrigger asChild>
           <Button tabIndex={-1} color="ghost" data-action-trigger>
@@ -276,14 +316,15 @@ export const CommandFooter = () => {
             }
           }}
         >
-          <ActionsCommand>
+          <ActionsCommand disablePointerSelection loop>
             <CommandInputContainer>
               <CommandInputField placeholder="Choose action..." />
             </CommandInputContainer>
             <CommandList data-action-list>
               {state.actions.map((action, actionIndex) => (
                 <CommandItem
-                  key={action}
+                  key={action.name}
+                  allowSingleClick
                   onSelect={() => {
                     setState((prev) => ({ ...prev, actionIndex }));
                     setIsActionOpen(false);
@@ -299,59 +340,190 @@ export const CommandFooter = () => {
                     });
                   }}
                 >
-                  <Text variant="labelsTitleCase">{action}</Text>
+                  <Text>{action.label}</Text>
                 </CommandItem>
               ))}
             </CommandList>
           </ActionsCommand>
         </PopoverContent>
       </Popover>
-    </Flex>
+    </CommandGroupFooter>
   );
 };
 
-export const CommandList = CommandPrimitive.List;
+export const CommandList = styled(CommandPrimitive.List, {
+  "& [cmdk-group-heading]": {
+    position: "sticky",
+    top: 0,
+  },
+});
 
 type CommandGroupProps = Omit<
   ComponentPropsWithoutRef<typeof CommandPrimitive.Group>,
   "value"
 > & {
   name: string;
-  actions: string[];
+  actions: CommandAction[];
+  hideAfterItemsAmount?: number;
 };
 
 export const CommandGroup = ({
   name,
   actions,
+  children,
+  hideAfterItemsAmount = 50,
   ...props
 }: CommandGroupProps) => {
+  const [visibleCount, setVisibleCount] = useState(hideAfterItemsAmount);
+  const groupRef = useRef<HTMLDivElement>(null);
+  const itemCount = Array.isArray(children) ? children.length : 0;
+  const hasMoreItems = itemCount > visibleCount;
+
+  const handleShowMore = () => {
+    setVisibleCount((prev) => prev + 100);
+  };
+
   return (
-    <CommandPrimitive.Group
+    <div ref={groupRef}>
+      <CommandPrimitive.Group
+        {...props}
+        value={name}
+        data-actions={JSON.stringify(actions)}
+      >
+        {
+          // Show items up to visibleCount
+          Array.isArray(children) && hasMoreItems
+            ? children.slice(0, visibleCount)
+            : children
+        }
+      </CommandPrimitive.Group>
+      {hasMoreItems && (
+        <Flex justify="center" css={{ padding: theme.spacing[2] }}>
+          <Button color="ghost" onClick={handleShowMore} type="button">
+            Show more ({itemCount - visibleCount} hidden)
+          </Button>
+        </Flex>
+      )}
+    </div>
+  );
+};
+
+export const CommandItem = ({
+  onSelect,
+  allowSingleClick,
+  ...props
+}: ComponentPropsWithoutRef<typeof CommandItemStyled> & {
+  onSelect?: () => void;
+  allowSingleClick?: boolean;
+}) => {
+  const doubleClickedRef = useRef(false);
+  const selectTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const pointerDownRef = useRef(false);
+
+  const handleSelect = () => {
+    // Actions menu mode - execute immediately
+    if (allowSingleClick) {
+      onSelect?.();
+      return;
+    }
+
+    // Default mode
+    if (selectTimeoutRef.current) {
+      clearTimeout(selectTimeoutRef.current);
+    }
+
+    // If double-click already happened, skip (it already executed)
+    if (doubleClickedRef.current) {
+      doubleClickedRef.current = false;
+      return;
+    }
+
+    // If triggered by Enter key (no pointer down), execute immediately
+    if (!pointerDownRef.current) {
+      onSelect?.();
+      return;
+    }
+
+    // For mouse clicks, delay to detect double-click
+    selectTimeoutRef.current = setTimeout(() => {
+      // Reset pointer flag after delay
+      pointerDownRef.current = false;
+    }, 300);
+  };
+
+  return (
+    <CommandItemStyled
       {...props}
-      value={name}
-      data-actions={actions.join()}
+      onPointerDown={
+        allowSingleClick
+          ? undefined
+          : () => {
+              pointerDownRef.current = true;
+            }
+      }
+      onDoubleClick={
+        allowSingleClick
+          ? undefined
+          : () => {
+              // Mark that double-click happened and execute immediately
+              doubleClickedRef.current = true;
+              if (selectTimeoutRef.current) {
+                clearTimeout(selectTimeoutRef.current);
+              }
+              onSelect?.();
+            }
+      }
+      onSelect={handleSelect}
     />
   );
 };
 
 export const CommandGroupHeading = styled("div", {
-  ...textVariants.titles,
+  ...textVariants.labelsSentenceCase,
   color: theme.colors.foregroundMoreSubtle,
   display: "flex",
+  backgroundColor: theme.colors.backgroundControls,
   gap: theme.spacing[5],
   alignItems: "center",
   paddingInline: theme.spacing[5],
   height: itemHeight,
 });
 
-export const CommandItem = styled(CommandPrimitive.Item, {
+export const CommandGroupFooter = styled("div", {
+  ...textVariants.labelsSentenceCase,
+  color: theme.colors.foregroundMoreSubtle,
+  display: "flex",
+  gap: theme.spacing[5],
+  alignItems: "center",
+  paddingInline: theme.spacing[5],
+  height: itemHeight,
+  justifyContent: "end",
+  borderTop: `1px solid ${theme.colors.borderMain}`,
+});
+
+export const CommandBackButton = ({ onClick }: { onClick?: () => void }) => {
+  return (
+    <SmallIconButton
+      icon={<CommandBackIcon />}
+      tabIndex={-1}
+      onClick={onClick}
+      aria-label="Go back"
+      css={{ display: "flex" }}
+    />
+  );
+};
+
+const CommandItemStyled = styled(CommandPrimitive.Item, {
   display: "grid",
   gridTemplateColumns: `1fr max-content`,
   alignItems: "center",
   minHeight: itemHeight,
   paddingInline: theme.spacing[9],
+  "&:hover": {
+    backgroundColor: theme.colors.backgroundItemMenuItemHover,
+  },
   "&[aria-selected=true]": {
-    backgroundColor: theme.colors.backgroundHover,
+    backgroundColor: theme.colors.backgroundItemCurrent,
   },
 });
 
@@ -360,3 +532,5 @@ export const CommandIcon = styled("div", {
   height: theme.spacing[9],
   placeSelf: "center",
 });
+
+export { useCommandState, useSetFooterContent };

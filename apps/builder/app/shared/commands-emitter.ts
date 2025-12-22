@@ -1,11 +1,14 @@
 import { atom } from "nanostores";
 import { $publisher, subscribe } from "~/shared/pubsub";
-import { clientSyncStore } from "~/shared/sync";
+import { clientSyncStore } from "~/shared/sync/sync-stores";
 
-type CommandMeta<CommandName extends string> = {
-  // @todo category, description
+export type CommandMeta<CommandName extends string> = {
   name: CommandName;
   label?: string;
+  /** brief description shown in keyboard shortcuts dialog */
+  description?: string;
+  /** category for grouping commands in UI for shortcuts dialog */
+  category?: "General" | "Panels" | "Navigator" | "Top bar" | "Style panel";
   /** default because hotkeys can be customized from ui */
   defaultHotkeys?: string[];
   /** set to false when default browser or radix behavior is desired */
@@ -21,6 +24,10 @@ type CommandMeta<CommandName extends string> = {
    * hide the command in meta+k panel
    */
   hidden?: boolean;
+  /**
+   * keep command panel open after executing the command
+   */
+  keepCommandPanelOpen?: boolean;
 };
 
 type CommandHandler = () => void;

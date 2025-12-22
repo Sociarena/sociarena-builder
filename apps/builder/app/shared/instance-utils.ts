@@ -1,23 +1,22 @@
 import { current, isDraft } from "immer";
 import { nanoid } from "nanoid";
 import { toast } from "@webstudio-is/design-system";
-import { equalMedia, type StyleValue } from "@webstudio-is/css-engine";
+import { builderApi } from "~/shared/builder-api";
+import type { StyleValue } from "@webstudio-is/css-engine";
+import { showAttribute } from "@webstudio-is/react-sdk";
 import {
   type Instances,
-  type StyleSource,
   type Instance,
-  type StyleSourceSelection,
   type StyleDecl,
   type Asset,
-  type StyleSources,
   type Breakpoints,
   type DataSources,
   type DataSource,
-  type Breakpoint,
   type WebstudioFragment,
   type WebstudioData,
   type Resource,
   type WsComponentMeta,
+  type Pages,
   getStyleDeclKey,
   findTreeInstanceIds,
   findTreeInstanceIdsExcludingSlotDescendants,
@@ -31,7 +30,12 @@ import {
   Props,
   elementComponent,
   tags,
+  blockTemplateComponent,
+  isComponentDetachable,
 } from "@webstudio-is/sdk";
+import { detectTokenConflicts } from "./style-source-utils";
+import { type ConflictResolution } from "./token-conflict-dialog";
+import { buildMergedBreakpointIds } from "./breakpoints-utils";
 import {
   $props,
   $styles,
@@ -46,6 +50,10 @@ import {
   $resources,
   $registeredTemplates,
   $project,
+  $isPreviewMode,
+  $textEditingInstanceSelector,
+  $isContentMode,
+  findBlockSelector,
 } from "./nano-states";
 import {
   type DroppableTarget,
@@ -55,14 +63,22 @@ import {
   getInstanceOrCreateFragmentIfNecessary,
   wrapEditableChildrenAroundDropTargetMutable,
 } from "./tree-utils";
+import {
+  insertStyleSources,
+  insertPortalLocalStyleSources,
+  insertLocalStyleSourcesWithNewIds,
+  deleteLocalStyleSourcesMutable,
+  collectStyleSourcesFromInstances,
+} from "./style-source-utils";
 import { removeByMutable } from "./array-utils";
-import { serverSyncStore } from "./sync";
+import { serverSyncStore } from "./sync/sync-stores";
 import { setDifference, setUnion } from "./shim";
 import { breakCyclesMutable, findCycles } from "@webstudio-is/project-build";
 import {
   $awareness,
   $selectedInstancePath,
   $selectedPage,
+  findAwarenessByInstanceId,
   getInstancePath,
   selectInstance,
   type InstancePath,
@@ -77,9 +93,12 @@ import {
   findClosestNonTextualContainer,
   isRichTextTree,
   isTreeSatisfyingContentModel,
+  isRichTextContent,
 } from "./content-model";
 import type { Project } from "@webstudio-is/project";
 import { getInstanceLabel } from "~/builder/shared/instance-label";
+import { $instanceTags } from "~/builder/features/style-panel/shared/model";
+import { reactPropsToStandardAttributes } from "@webstudio-is/react-sdk";
 
 /**
  * structuredClone can be invoked on draft and throw error
@@ -596,15 +615,439 @@ export const deleteInstanceMutable = (
   for (const instanceId of instanceIds) {
     styleSourceSelections.delete(instanceId);
   }
-  for (const styleSourceId of localStyleSourceIds) {
-    styleSources.delete(styleSourceId);
+  deleteLocalStyleSourcesMutable({
+    localStyleSourceIds,
+    styleSources,
+    styles,
+  });
+  return true;
+};
+
+export const unwrapInstanceMutable = ({
+  instances,
+  props,
+  metas,
+  selectedItem,
+  parentItem,
+}: {
+  instances: Map<string, Instance>;
+  props: Props;
+  metas: Map<string, WsComponentMeta>;
+  selectedItem: {
+    instanceSelector: InstanceSelector;
+    instance: { id: string };
+  };
+  parentItem: { instanceSelector: InstanceSelector; instance: { id: string } };
+}): { success: boolean; error?: string } => {
+  // Check if the selected instance is rich text content (like Bold, Italic in Paragraph)
+  if (
+    isRichTextContent({
+      instanceSelector: selectedItem.instanceSelector,
+      instances,
+      props,
+      metas,
+    })
+  ) {
+    return { success: false, error: "Cannot unwrap textual instance" };
   }
-  for (const [styleDeclKey, styleDecl] of styles) {
-    if (localStyleSourceIds.has(styleDecl.styleSourceId)) {
-      styles.delete(styleDeclKey);
+
+  const parentInstance = instances.get(parentItem.instance.id);
+  const selectedInstance = instances.get(selectedItem.instance.id);
+  if (!parentInstance || !selectedInstance) {
+    return { success: false, error: "Instance not found" };
+  }
+
+  // Get grandparent to replace parent with selected
+  const grandparentId = parentItem.instanceSelector[1];
+  if (!grandparentId) {
+    return { success: false, error: "Cannot unwrap instance at root level" };
+  }
+  const grandparentInstance = instances.get(grandparentId);
+  if (!grandparentInstance) {
+    return { success: false, error: "Grandparent instance not found" };
+  }
+
+  // Remove selected instance from parent's children
+  const selectedIndexInParent = parentInstance.children.findIndex(
+    (child) => child.type === "id" && child.value === selectedItem.instance.id
+  );
+  if (selectedIndexInParent !== -1) {
+    parentInstance.children.splice(selectedIndexInParent, 1);
+  }
+
+  // If parent has no more children, delete it
+  if (parentInstance.children.length === 0) {
+    instances.delete(parentItem.instance.id);
+  }
+
+  // Add selected instance to grandparent at parent's position
+  const parentIndex = grandparentInstance.children.findIndex(
+    (child) => child.type === "id" && child.value === parentItem.instance.id
+  );
+  if (parentIndex !== -1) {
+    if (parentInstance.children.length === 0) {
+      // Replace parent with selected if parent is now empty
+      grandparentInstance.children[parentIndex] = {
+        type: "id",
+        value: selectedItem.instance.id,
+      };
+    } else {
+      // Insert selected after parent if parent still has children
+      grandparentInstance.children.splice(parentIndex + 1, 0, {
+        type: "id",
+        value: selectedItem.instance.id,
+      });
     }
   }
+
+  const matches = isTreeSatisfyingContentModel({
+    instances,
+    props,
+    metas,
+    instanceSelector: [
+      selectedItem.instance.id,
+      ...parentItem.instanceSelector.slice(1),
+    ],
+  });
+  if (matches === false) {
+    return { success: false, error: "Cannot unwrap instance" };
+  }
+
+  return { success: true };
+};
+
+export const canUnwrapInstance = (instancePath: InstancePath) => {
+  // Need at least 3 levels: selected, parent, and grandparent
+  // Can't unwrap if there's no grandparent to move the selected instance to
+  if (instancePath.length < 3) {
+    return false;
+  }
+  const [selectedItem, parentItem] = instancePath;
+
+  // Prevent unwrapping if parent is the root instance (e.g., Body)
+  const rootInstanceId = $selectedPage.get()?.rootInstanceId;
+  if (
+    rootInstanceId !== undefined &&
+    parentItem.instance.id === rootInstanceId
+  ) {
+    return false;
+  }
+
+  // Check if the selected instance is rich text content (like Bold, Italic in Paragraph)
+  const instances = $instances.get();
+  const props = $props.get();
+  const metas = $registeredComponentMetas.get();
+
+  if (
+    isRichTextContent({
+      instanceSelector: selectedItem.instanceSelector,
+      instances,
+      props,
+      metas,
+    })
+  ) {
+    return false;
+  }
+
   return true;
+};
+
+export const toggleInstanceShow = (instanceId: Instance["id"]) => {
+  serverSyncStore.createTransaction([$props], (props) => {
+    const allProps = Array.from(props.values());
+    const instanceProps = allProps.filter(
+      (prop) => prop.instanceId === instanceId
+    );
+    let showProp = instanceProps.find((prop) => prop.name === showAttribute);
+
+    // Toggle the show value
+    const newValue = showProp?.type === "boolean" ? !showProp.value : false;
+
+    if (showProp === undefined) {
+      showProp = {
+        id: nanoid(),
+        instanceId,
+        name: showAttribute,
+        type: "boolean",
+        value: newValue,
+      };
+    }
+    if (showProp.type === "boolean") {
+      props.set(showProp.id, { ...showProp, value: newValue });
+    }
+  });
+};
+
+export const wrapInstance = (component: string, tag?: string) => {
+  const instancePath = $selectedInstancePath.get();
+  // global root or body are selected
+  if (instancePath === undefined || instancePath.length === 1) {
+    return;
+  }
+  const [selectedItem, parentItem] = instancePath;
+  const selectedInstance = selectedItem.instance;
+  const newInstanceId = nanoid();
+  const newInstanceSelector = [newInstanceId, ...parentItem.instanceSelector];
+  const metas = $registeredComponentMetas.get();
+
+  try {
+    updateWebstudioData((data) => {
+      const isContent = isRichTextContent({
+        instanceSelector: selectedItem.instanceSelector,
+        instances: data.instances,
+        props: data.props,
+        metas,
+      });
+      if (isContent) {
+        toast.error(`Cannot wrap textual content`);
+        throw Error("Abort transaction");
+      }
+      const newInstance: Instance = {
+        type: "instance",
+        id: newInstanceId,
+        component,
+        children: [{ type: "id", value: selectedInstance.id }],
+      };
+
+      if (tag || component === elementComponent) {
+        newInstance.tag = tag ?? "div";
+      }
+      const parentInstance = data.instances.get(parentItem.instance.id);
+      data.instances.set(newInstanceId, newInstance);
+      if (parentInstance) {
+        for (const child of parentInstance.children) {
+          if (child.type === "id" && child.value === selectedInstance.id) {
+            child.value = newInstanceId;
+          }
+        }
+      }
+
+      const isSatisfying = isTreeSatisfyingContentModel({
+        instances: data.instances,
+        props: data.props,
+        metas,
+        instanceSelector: newInstanceSelector,
+      });
+
+      if (isSatisfying === false) {
+        const label = getInstanceLabel({ component, tag });
+        toast.error(`Cannot wrap in ${label}`);
+        throw Error("Abort transaction");
+      }
+    });
+    selectInstance(newInstanceSelector);
+  } catch {
+    // do nothing
+  }
+};
+
+// Check if an instance can be converted to a specific component or tag
+export const canConvertInstance = (
+  selectedInstanceId: string,
+  selectedInstanceSelector: string[],
+  component: string,
+  tag: string | undefined,
+  instances: Instances,
+  props: Props,
+  metas: Map<Instance["component"], WsComponentMeta>
+): boolean => {
+  const selectedInstance = instances.get(selectedInstanceId);
+
+  if (!selectedInstance) {
+    return false;
+  }
+
+  // Create a test instance with the new component/tag
+  const testInstance: Instance = {
+    ...selectedInstance,
+    component,
+  };
+
+  if (tag || component === elementComponent) {
+    testInstance.tag = tag ?? "div";
+  } else {
+    // For components with presetStyle (like Heading, Box), infer default tag
+    const meta = metas.get(component);
+    const defaultTag = Object.keys(
+      (meta as { presetStyle?: Record<string, unknown> })?.presetStyle ?? {}
+    ).at(0);
+    if (defaultTag) {
+      testInstance.tag = defaultTag;
+    }
+  }
+
+  const newInstances = new Map(instances);
+  newInstances.set(testInstance.id, testInstance);
+
+  // Validate the converted instance satisfies content model
+  return isTreeSatisfyingContentModel({
+    instances: newInstances,
+    props,
+    metas,
+    instanceSelector: selectedInstanceSelector,
+  });
+};
+
+export const convertInstance = (component: string, tag?: string) => {
+  const instancePath = $selectedInstancePath.get();
+  // global root or body are selected
+  if (instancePath === undefined || instancePath.length === 1) {
+    return;
+  }
+  const [selectedItem] = instancePath;
+  const selectedInstance = selectedItem.instance;
+  const selectedInstanceSelector = selectedItem.instanceSelector;
+  const metas = $registeredComponentMetas.get();
+  const instanceTags = $instanceTags.get();
+  try {
+    updateWebstudioData((data) => {
+      const instance = data.instances.get(selectedInstance.id);
+      if (instance === undefined) {
+        return;
+      }
+      instance.component = component;
+      // convert to specified tag or with currently used
+      if (tag || component === elementComponent) {
+        instance.tag = tag ?? instanceTags.get(selectedInstance.id) ?? "div";
+        // delete legacy tag prop if specified
+        for (const prop of data.props.values()) {
+          if (prop.instanceId !== selectedInstance.id) {
+            continue;
+          }
+          if (prop.name === "tag") {
+            data.props.delete(prop.id);
+            continue;
+          }
+          const newName = reactPropsToStandardAttributes[prop.name];
+          if (newName) {
+            const newId = `${prop.instanceId}:${newName}`;
+            data.props.delete(prop.id);
+            data.props.set(newId, { ...prop, id: newId, name: newName });
+          }
+        }
+      }
+      const isSatisfying = isTreeSatisfyingContentModel({
+        instances: data.instances,
+        props: data.props,
+        metas,
+        instanceSelector: selectedInstanceSelector,
+      });
+      if (isSatisfying === false) {
+        const label = getInstanceLabel({ component, tag });
+        toast.error(`Cannot convert to ${label}`);
+        throw Error("Abort transaction");
+      }
+    });
+  } catch {
+    // do nothing
+  }
+};
+
+export const unwrapInstance = () => {
+  const instancePath = $selectedInstancePath.get();
+  if (instancePath === undefined || !canUnwrapInstance(instancePath)) {
+    return;
+  }
+
+  const [selectedItem, parentItem] = instancePath;
+
+  try {
+    updateWebstudioData((data) => {
+      const result = unwrapInstanceMutable({
+        instances: data.instances,
+        props: data.props,
+        metas: $registeredComponentMetas.get(),
+        selectedItem,
+        parentItem,
+      });
+
+      if (!result.success) {
+        toast.error(result.error ?? "Cannot unwrap instance");
+        throw Error("Abort transaction");
+      }
+    });
+    // After unwrap, select the child that replaced the parent
+    selectInstance([
+      selectedItem.instance.id,
+      ...parentItem.instanceSelector.slice(1),
+    ]);
+  } catch {
+    // do nothing
+  }
+};
+
+export const deleteSelectedInstance = () => {
+  if ($isPreviewMode.get()) {
+    return;
+  }
+  const textEditingInstanceSelector = $textEditingInstanceSelector.get();
+  const instancePath = $selectedInstancePath.get();
+  // cannot delete instance while editing
+  if (textEditingInstanceSelector) {
+    return;
+  }
+  if (instancePath === undefined || instancePath.length === 1) {
+    return;
+  }
+  const [selectedItem, parentItem] = instancePath;
+  const selectedInstanceSelector = selectedItem.instanceSelector;
+  const instances = $instances.get();
+  if (!isComponentDetachable(selectedItem.instance.component)) {
+    toast.error(
+      "This instance can not be moved outside of its parent component."
+    );
+    return false;
+  }
+
+  if ($isContentMode.get()) {
+    // In content mode we are allowing to delete childen of the editable block
+    const editableInstanceSelector = findBlockSelector(
+      selectedInstanceSelector,
+      instances
+    );
+    if (editableInstanceSelector === undefined) {
+      builderApi.toast.info("You can't delete this instance in conent mode.");
+      return;
+    }
+
+    const isChildOfBlock =
+      selectedInstanceSelector.length - editableInstanceSelector.length === 1;
+
+    const isTemplateInstance =
+      instances.get(selectedInstanceSelector[0])?.component ===
+      blockTemplateComponent;
+
+    if (isTemplateInstance) {
+      builderApi.toast.info("You can't delete this instance in content mode.");
+      return;
+    }
+
+    if (!isChildOfBlock) {
+      builderApi.toast.info("You can't delete this instance in content mode.");
+      return;
+    }
+  }
+
+  // find next selected instance
+  let newSelectedInstanceSelector: undefined | InstanceSelector;
+  const parentInstanceSelector = parentItem.instanceSelector;
+  const siblingIds = parentItem.instance.children
+    .filter((child) => child.type === "id")
+    .map((child) => child.value);
+  const position = siblingIds.indexOf(selectedItem.instance.id);
+  const siblingId = siblingIds[position + 1] ?? siblingIds[position - 1];
+  if (siblingId) {
+    // select next or previous sibling if possible
+    newSelectedInstanceSelector = [siblingId, ...parentInstanceSelector];
+  } else {
+    // fallback to parent
+    newSelectedInstanceSelector = parentInstanceSelector;
+  }
+  updateWebstudioData((data) => {
+    if (deleteInstanceMutable(data, instancePath)) {
+      selectInstance(newSelectedInstanceSelector);
+    }
+  });
 };
 
 const traverseStyleValue = (
@@ -676,43 +1119,32 @@ export const extractWebstudioFragment = (
   // collect the instance by id and all its descendants including portal instances
   const fragmentInstanceIds = findTreeInstanceIds(instances, rootInstanceId);
   let fragmentInstances: Instance[] = [];
-  const fragmentStyleSourceSelections: StyleSourceSelection[] = [];
-  const fragmentStyleSources: StyleSources = new Map();
+
+  // Collect style sources and selections from instances
+  const {
+    styleSourceSelectionsArray: fragmentStyleSourceSelections,
+    styleSourcesMap: fragmentStyleSources,
+    stylesArray: fragmentStyles,
+  } = collectStyleSourcesFromInstances({
+    instanceIds: fragmentInstanceIds,
+    styleSourceSelections,
+    styleSources,
+    styles,
+  });
+
   for (const instanceId of fragmentInstanceIds) {
     const instance = instances.get(instanceId);
     if (instance) {
       fragmentInstances.push(instance);
-    }
-
-    // collect all style sources bound to these instances
-    const styleSourceSelection = styleSourceSelections.get(instanceId);
-    if (styleSourceSelection) {
-      fragmentStyleSourceSelections.push(styleSourceSelection);
-      for (const styleSourceId of styleSourceSelection.values) {
-        if (fragmentStyleSources.has(styleSourceId)) {
-          continue;
-        }
-        const styleSource = styleSources.get(styleSourceId);
-        if (styleSource === undefined) {
-          continue;
-        }
-        fragmentStyleSources.set(styleSourceId, styleSource);
-      }
     }
   }
 
   const fragmentAssetIds = new Set<Asset["id"]>();
   const fragmentFontFamilies = new Set<string>();
 
-  // collect styles bound to these style sources
-  const fragmentStyles: StyleDecl[] = [];
+  // collect breakpoints and assets from styles
   const fragmentBreapoints: Breakpoints = new Map();
-  for (const styleDecl of styles.values()) {
-    if (fragmentStyleSources.has(styleDecl.styleSourceId) === false) {
-      continue;
-    }
-    fragmentStyles.push(styleDecl);
-
+  for (const styleDecl of fragmentStyles) {
     // collect breakpoints
     if (fragmentBreapoints.has(styleDecl.breakpointId) === false) {
       const breakpoint = breakpoints.get(styleDecl.breakpointId);
@@ -891,11 +1323,13 @@ export const insertWebstudioFragmentCopy = ({
   fragment,
   availableVariables,
   projectId,
+  conflictResolution = "theirs",
 }: {
   data: Omit<WebstudioData, "pages">;
   fragment: WebstudioFragment;
   availableVariables: DataSource[];
   projectId: Project["id"];
+  conflictResolution?: ConflictResolution;
 }) => {
   const newInstanceIds = new Map<Instance["id"], Instance["id"]>();
   const newDataSourceIds = new Map<DataSource["id"], DataSource["id"]>();
@@ -953,39 +1387,44 @@ export const insertWebstudioFragmentCopy = ({
 
   // merge breakpoints
 
-  const mergedBreakpointIds = new Map<Breakpoint["id"], Breakpoint["id"]>();
+  const mergedBreakpointIds = buildMergedBreakpointIds(
+    fragment.breakpoints,
+    breakpoints
+  );
   for (const newBreakpoint of fragment.breakpoints) {
-    let matched = false;
-    for (const breakpoint of breakpoints.values()) {
-      if (equalMedia(breakpoint, newBreakpoint)) {
-        matched = true;
-        mergedBreakpointIds.set(newBreakpoint.id, breakpoint.id);
-        break;
-      }
-    }
-    if (matched === false) {
+    if (mergedBreakpointIds.has(newBreakpoint.id) === false) {
       breakpoints.set(newBreakpoint.id, newBreakpoint);
     }
   }
 
   // insert tokens with their styles
 
-  const tokenStyleSourceIds = new Set<StyleSource["id"]>();
-  for (const styleSource of fragment.styleSources) {
-    // prevent inserting styles when token is already present
-    if (styleSource.type === "local" || styleSources.has(styleSource.id)) {
-      continue;
-    }
-    styleSource.type satisfies "token";
-    tokenStyleSourceIds.add(styleSource.id);
-    styleSources.set(styleSource.id, styleSource);
+  const { styleSourceIds, styleSourceIdMap, updatedStyleSources } =
+    insertStyleSources({
+      fragmentStyleSources: fragment.styleSources,
+      fragmentStyles: fragment.styles,
+      existingStyleSources: styleSources,
+      existingStyles: styles,
+      breakpoints,
+      mergedBreakpointIds,
+      conflictResolution,
+    });
+
+  // Update styleSources map with the new tokens
+  for (const [id, styleSource] of updatedStyleSources) {
+    styleSources.set(id, styleSource);
   }
+
   for (const styleDecl of fragment.styles) {
-    if (tokenStyleSourceIds.has(styleDecl.styleSourceId)) {
+    if (styleSourceIds.has(styleDecl.styleSourceId)) {
       const { breakpointId } = styleDecl;
       const newStyleDecl: StyleDecl = {
         ...styleDecl,
         breakpointId: mergedBreakpointIds.get(breakpointId) ?? breakpointId,
+        // Remap the styleSourceId to the new token ID
+        styleSourceId:
+          styleSourceIdMap.get(styleDecl.styleSourceId) ??
+          styleDecl.styleSourceId,
       };
       styles.set(getStyleDeclKey(newStyleDecl), newStyleDecl);
     }
@@ -1044,37 +1483,16 @@ export const insertWebstudioFragmentCopy = ({
 
     // insert local style sources with their styles
 
-    const instanceStyleSourceIds = new Set<StyleSource["id"]>();
-    for (const styleSourceSelection of fragment.styleSourceSelections) {
-      const { instanceId } = styleSourceSelection;
-      if (instanceIds.has(instanceId) === false) {
-        continue;
-      }
-      styleSourceSelections.set(instanceId, styleSourceSelection);
-      for (const styleSourceId of styleSourceSelection.values) {
-        instanceStyleSourceIds.add(styleSourceId);
-      }
-    }
-    const localStyleSourceIds = new Set<StyleSource["id"]>();
-    for (const styleSource of fragment.styleSources) {
-      if (
-        styleSource.type === "local" &&
-        instanceStyleSourceIds.has(styleSource.id)
-      ) {
-        localStyleSourceIds.add(styleSource.id);
-        styleSources.set(styleSource.id, styleSource);
-      }
-    }
-    for (const styleDecl of fragment.styles) {
-      if (localStyleSourceIds.has(styleDecl.styleSourceId)) {
-        const { breakpointId } = styleDecl;
-        const newStyleDecl: StyleDecl = {
-          ...styleDecl,
-          breakpointId: mergedBreakpointIds.get(breakpointId) ?? breakpointId,
-        };
-        styles.set(getStyleDeclKey(newStyleDecl), newStyleDecl);
-      }
-    }
+    insertPortalLocalStyleSources({
+      fragmentStyleSources: fragment.styleSources,
+      fragmentStyleSourceSelections: fragment.styleSourceSelections,
+      fragmentStyles: fragment.styles,
+      instanceIds,
+      styleSources,
+      styleSourceSelections,
+      styles,
+      mergedBreakpointIds,
+    });
   }
 
   /**
@@ -1227,68 +1645,18 @@ export const insertWebstudioFragmentCopy = ({
 
   // insert local styles with new ids
 
-  const newLocalStyleSources = new Map();
-  for (const styleSource of fragment.styleSources) {
-    if (styleSource.type === "local") {
-      newLocalStyleSources.set(styleSource.id, styleSource);
-    }
-  }
-
-  const newLocalStyleSourceIds = new Map<
-    StyleSource["id"],
-    StyleSource["id"]
-  >();
-  for (const { instanceId, values } of fragment.styleSourceSelections) {
-    if (fragmentInstanceIds.has(instanceId) === false) {
-      continue;
-    }
-
-    const existingStyleSourceIds =
-      styleSourceSelections.get(instanceId)?.values ?? [];
-    let existingLocalStyleSource;
-    for (const styleSourceId of existingStyleSourceIds) {
-      const styleSource = styleSources.get(styleSourceId);
-      if (styleSource?.type === "local") {
-        existingLocalStyleSource = styleSource;
-      }
-    }
-    const newStyleSourceIds = [];
-    for (let styleSourceId of values) {
-      const newLocalStyleSource = newLocalStyleSources.get(styleSourceId);
-      if (newLocalStyleSource) {
-        // merge only :root styles and duplicate others
-        if (instanceId === ROOT_INSTANCE_ID && existingLocalStyleSource) {
-          // write local styles into existing local style source
-          styleSourceId = existingLocalStyleSource.id;
-        } else {
-          // create new local styles
-          const newId = nanoid();
-          styleSources.set(newId, { ...newLocalStyleSource, id: newId });
-          styleSourceId = newId;
-        }
-        newLocalStyleSourceIds.set(newLocalStyleSource.id, styleSourceId);
-      }
-      newStyleSourceIds.push(styleSourceId);
-    }
-    const newInstanceId = newInstanceIds.get(instanceId) ?? instanceId;
-    styleSourceSelections.set(newInstanceId, {
-      instanceId: newInstanceId,
-      values: newStyleSourceIds,
-    });
-  }
-
-  for (const styleDecl of fragment.styles) {
-    const { breakpointId, styleSourceId } = styleDecl;
-    if (newLocalStyleSourceIds.has(styleDecl.styleSourceId)) {
-      const newStyleDecl: StyleDecl = {
-        ...styleDecl,
-        styleSourceId:
-          newLocalStyleSourceIds.get(styleSourceId) ?? styleSourceId,
-        breakpointId: mergedBreakpointIds.get(breakpointId) ?? breakpointId,
-      };
-      styles.set(getStyleDeclKey(newStyleDecl), newStyleDecl);
-    }
-  }
+  insertLocalStyleSourcesWithNewIds({
+    fragmentStyleSources: fragment.styleSources,
+    fragmentStyleSourceSelections: fragment.styleSourceSelections,
+    fragmentStyles: fragment.styles,
+    fragmentInstanceIds,
+    newInstanceIds,
+    styleSourceIdMap,
+    styleSources,
+    styleSourceSelections,
+    styles,
+    mergedBreakpointIds,
+  });
 
   return newDataIds;
 };
@@ -1348,7 +1716,7 @@ export const findClosestInsertable = (
     fragment,
     onError: (message) => {
       const component = fragment.instances[0].component;
-      const label = getInstanceLabel({ component }, {});
+      const label = getInstanceLabel({ component });
       toast.warn(message || `"${label}" has no place here`);
     },
   });
@@ -1383,4 +1751,76 @@ export const findClosestInsertable = (
     parentSelector,
     position: lastChildPosition + 1,
   };
+};
+
+/**
+ * Build the ancestor path array for an instance.
+ * Returns an array of labels for all ancestors from root to parent.
+ */
+export const buildInstancePath = (
+  instanceId: Instance["id"],
+  pages: Pages,
+  instances: Instances
+): string[] => {
+  const awareness = findAwarenessByInstanceId(pages, instances, instanceId);
+  if (!awareness.instanceSelector) {
+    return [];
+  }
+
+  const instancePath = getInstancePath(
+    awareness.instanceSelector,
+    instances,
+    undefined,
+    undefined
+  );
+
+  if (!instancePath) {
+    return [];
+  }
+
+  return instancePath
+    .slice()
+    .reverse()
+    .slice(0, -1) // Remove the instance itself (last element after reverse), keep only ancestors
+    .map(({ instance }) => getInstanceLabel(instance));
+};
+
+/**
+ * Detects token conflicts and shows resolution dialog if needed.
+ * Returns the conflict resolution strategy to use.
+ *
+ * @param fragment - The fragment to check for conflicts
+ * @returns Promise that resolves with "theirs" (keep incoming) or "ours" (use existing), or rejects if user cancels
+ */
+export const insertFragmentWithConflictResolution = async ({
+  fragment,
+}: {
+  fragment: WebstudioFragment;
+}): Promise<ConflictResolution> => {
+  const data = getWebstudioData();
+  if (data === undefined) {
+    throw new Error("No webstudio data available");
+  }
+
+  const mergedBreakpointIds = buildMergedBreakpointIds(
+    fragment.breakpoints,
+    data.breakpoints
+  );
+
+  const conflicts = detectTokenConflicts({
+    fragmentStyleSources: fragment.styleSources,
+    fragmentStyles: fragment.styles,
+    existingStyleSources: data.styleSources,
+    existingStyles: data.styles,
+    breakpoints: data.breakpoints,
+    mergedBreakpointIds,
+  });
+
+  if (conflicts.length === 0) {
+    // No conflicts, use theirs (doesn't matter which since there are no conflicts)
+    return "theirs";
+  }
+
+  // Show conflict dialog and wait for user choice
+  return await builderApi.showTokenConflictDialog(conflicts);
 };
