@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { nanoid } from "nanoid";
 import { atom, computed } from "nanostores";
 import { mergeRefs } from "@react-aria/utils";
 import { useStore } from "@nanostores/react";
@@ -29,7 +28,6 @@ import {
   blockTemplateComponent,
   descendantComponent,
   type Instance,
-  type WsComponentMeta,
 } from "@webstudio-is/sdk";
 import { animationCanPlayOnCanvasProperty } from "@webstudio-is/sdk/runtime";
 import {
@@ -54,8 +52,8 @@ import {
   $propValuesByInstanceSelectorWithMemoryProps,
 } from "~/shared/nano-states";
 import type { InstanceSelector } from "~/shared/tree-utils";
-import { serverSyncStore } from "~/shared/sync";
-import { reparentInstance } from "~/shared/instance-utils";
+import { serverSyncStore } from "~/shared/sync/sync-stores";
+import { reparentInstance, toggleInstanceShow } from "~/shared/instance-utils";
 import { emitCommand } from "~/builder/shared/commands";
 import { useContentEditable } from "~/shared/dom-hooks";
 import {
@@ -72,6 +70,7 @@ import {
   getInstanceLabel,
   InstanceIcon,
 } from "~/builder/shared/instance-label";
+import { InstanceContextMenu } from "~/builder/shared/instance-context-menu";
 
 type TreeItemAncestor =
   | undefined
@@ -321,24 +320,7 @@ const ShowToggle = ({
     return;
   }
   const toggleShow = () => {
-    const newValue = value === false;
-    serverSyncStore.createTransaction([$props], (props) => {
-      const { propsByInstanceId } = $propsIndex.get();
-      const instanceProps = propsByInstanceId.get(instance.id);
-      let showProp = instanceProps?.find((prop) => prop.name === showAttribute);
-      if (showProp === undefined) {
-        showProp = {
-          id: nanoid(),
-          instanceId: instance.id,
-          name: showAttribute,
-          type: "boolean",
-          value: newValue,
-        };
-      }
-      if (showProp.type === "boolean") {
-        props.set(showProp.id, { ...showProp, value: newValue });
-      }
-    });
+    toggleInstanceShow(instance.id);
   };
 
   const EyeIcon = isAnimating ? AnimatedEyeOpenIcon : EyeOpenIcon;
@@ -402,19 +384,17 @@ const EditableTreeNodeLabel = styled("div", {
 });
 
 const TreeNodeContent = ({
-  meta,
   instance,
   isEditing,
   onIsEditingChange,
 }: {
-  meta: WsComponentMeta;
   instance: Instance;
   isEditing: boolean;
   onIsEditingChange: (isEditing: boolean) => void;
 }) => {
   const editableRef = useRef<HTMLDivElement | null>(null);
 
-  const label = getInstanceLabel(instance, meta);
+  const label = getInstanceLabel(instance);
   const { ref, handlers } = useContentEditable({
     value: label,
     isEditable: true,
@@ -743,60 +723,61 @@ export const NavigatorTree = () => {
               }}
               onExpand={(isExpanded) => handleExpand(item, isExpanded, false)}
             >
-              <TreeNode
-                level={level}
-                isSelected={selectedKey === key}
-                isHighlighted={hoveredKey === key || dropTargetKey === key}
-                isExpanded={item.isExpanded}
-                isActionVisible={isAnimating}
-                onExpand={(isExpanded, all) =>
-                  handleExpand(item, isExpanded, all)
-                }
-                nodeProps={{
-                  style: {
-                    opacity: item.isHidden ? 0.4 : undefined,
-                    color: item.isReusable
-                      ? rawTheme.colors.foregroundReusable
-                      : undefined,
-                  },
-                }}
-                buttonProps={{
-                  onMouseEnter: () => {
-                    $hoveredInstanceSelector.set(item.selector);
-                    $blockChildOutline.set(undefined);
-                  },
-                  onMouseLeave: () => $hoveredInstanceSelector.set(undefined),
-                  onClick: (event) =>
-                    selectInstanceAndClearSelection(item.selector, event),
-                  onFocus: (event) =>
-                    selectInstanceAndClearSelection(item.selector, event),
-                  onKeyDown: (event) => {
-                    if (event.key === "Enter") {
-                      emitCommand("editInstanceText");
-                    }
-                  },
-                }}
-                action={
-                  <ShowToggle
-                    instance={item.instance}
-                    value={show}
-                    isAnimating={isAnimating}
-                  />
-                }
-              >
-                <TreeNodeContent
-                  meta={meta}
-                  instance={item.instance}
-                  isEditing={
-                    item.selector.join() === editingItemSelector?.join()
+              <InstanceContextMenu>
+                <TreeNode
+                  level={level}
+                  isSelected={selectedKey === key}
+                  isHighlighted={hoveredKey === key || dropTargetKey === key}
+                  isExpanded={item.isExpanded}
+                  isActionVisible={isAnimating}
+                  onExpand={(isExpanded, all) =>
+                    handleExpand(item, isExpanded, all)
                   }
-                  onIsEditingChange={(isEditing) => {
-                    $editingItemSelector.set(
-                      isEditing === true ? item.selector : undefined
-                    );
+                  nodeProps={{
+                    style: {
+                      opacity: item.isHidden ? 0.4 : undefined,
+                      color: item.isReusable
+                        ? rawTheme.colors.foregroundReusable
+                        : undefined,
+                    },
                   }}
-                />
-              </TreeNode>
+                  buttonProps={{
+                    onMouseEnter: () => {
+                      $hoveredInstanceSelector.set(item.selector);
+                      $blockChildOutline.set(undefined);
+                    },
+                    onMouseLeave: () => $hoveredInstanceSelector.set(undefined),
+                    onClick: (event) =>
+                      selectInstanceAndClearSelection(item.selector, event),
+                    onFocus: (event) =>
+                      selectInstanceAndClearSelection(item.selector, event),
+                    onKeyDown: (event) => {
+                      if (event.key === "Enter") {
+                        emitCommand("editInstanceText");
+                      }
+                    },
+                  }}
+                  action={
+                    <ShowToggle
+                      instance={item.instance}
+                      value={show}
+                      isAnimating={isAnimating}
+                    />
+                  }
+                >
+                  <TreeNodeContent
+                    instance={item.instance}
+                    isEditing={
+                      item.selector.join() === editingItemSelector?.join()
+                    }
+                    onIsEditingChange={(isEditing) => {
+                      $editingItemSelector.set(
+                        isEditing === true ? item.selector : undefined
+                      );
+                    }}
+                  />
+                </TreeNode>
+              </InstanceContextMenu>
             </TreeSortableItem>
           );
         })}

@@ -1,37 +1,32 @@
-import { nanoid } from "nanoid";
-import {
-  blockTemplateComponent,
-  elementComponent,
-  isComponentDetachable,
-} from "@webstudio-is/sdk";
-import type { Instance } from "@webstudio-is/sdk";
 import { toast } from "@webstudio-is/design-system";
 import { createCommandsEmitter, type Command } from "~/shared/commands-emitter";
 import {
   $editingItemSelector,
-  $instances,
-  $textEditingInstanceSelector,
   $isDesignMode,
   toggleBuilderMode,
-  $isPreviewMode,
-  $isContentMode,
-  $registeredComponentMetas,
-  findBlockSelector,
   $project,
 } from "~/shared/nano-states";
+
+// Declare command for type safety
+declare module "~/shared/pubsub" {
+  interface CommandRegistry {
+    focusStyleSourceInput: undefined;
+  }
+}
+
 import {
   $breakpointsMenuView,
   selectBreakpointByOrder,
 } from "~/shared/breakpoints";
 import {
-  deleteInstanceMutable,
+  updateWebstudioData,
+  unwrapInstance,
+  deleteSelectedInstance,
   extractWebstudioFragment,
   insertWebstudioFragmentAt,
   insertWebstudioFragmentCopy,
-  updateWebstudioData,
 } from "~/shared/instance-utils";
-import type { InstanceSelector } from "~/shared/tree-utils";
-import { serverSyncStore } from "~/shared/sync";
+import { serverSyncStore } from "~/shared/sync/sync-stores";
 import { $publisher } from "~/shared/pubsub";
 import {
   $activeInspectorPanel,
@@ -41,24 +36,25 @@ import {
 } from "./nano-states";
 import { $selectedInstancePath, selectInstance } from "~/shared/awareness";
 import { openCommandPanel } from "../features/command-panel";
+import { showWrapComponentsList } from "../features/command-panel/groups/wrap-group";
+import { showConvertComponentsList } from "../features/command-panel/groups/convert-group";
 import { builderApi } from "~/shared/builder-api";
 import { getSetting, setSetting } from "./client-settings";
 import { findAvailableVariables } from "~/shared/data-variables";
-import { atom } from "nanostores";
-import {
-  findClosestNonTextualContainer,
-  isRichTextContent,
-  isTreeSatisfyingContentModel,
-} from "~/shared/content-model";
 import { generateFragmentFromHtml } from "~/shared/html";
 import { generateFragmentFromTailwind } from "~/shared/tailwind/tailwind";
 import { denormalizeSrcProps } from "~/shared/copy-paste/asset-upload";
-import { getInstanceLabel } from "./instance-label";
-import { $instanceTags } from "../features/style-panel/shared/model";
-import { reactPropsToStandardAttributes } from "@webstudio-is/react-sdk";
-import { isSyncIdle } from "./sync/sync-server";
-
-export const $styleSourceInputElement = atom<HTMLInputElement | undefined>();
+import { isSyncIdle } from "~/shared/sync/project-queue";
+import { openDeleteUnusedTokensDialog } from "~/builder/shared/style-source-actions";
+import { openDeleteUnusedDataVariablesDialog } from "~/builder/shared/data-variable-utils";
+import { openDeleteUnusedCssVariablesDialog } from "~/builder/shared/css-variable-utils";
+import { openKeyboardShortcutsDialog } from "~/builder/features/keyboard-shortcuts-dialog";
+import {
+  copyInstance,
+  emitPaste,
+  cutInstance,
+} from "~/shared/copy-paste/init-copy-paste";
+import { toggleInstanceShow } from "~/shared/instance-utils";
 
 const makeBreakpointCommand = <CommandName extends string>(
   name: CommandName,
@@ -72,240 +68,6 @@ const makeBreakpointCommand = <CommandName extends string>(
     selectBreakpointByOrder(number);
   },
 });
-
-export const deleteSelectedInstance = () => {
-  if ($isPreviewMode.get()) {
-    return;
-  }
-  const textEditingInstanceSelector = $textEditingInstanceSelector.get();
-  const instancePath = $selectedInstancePath.get();
-  // cannot delete instance while editing
-  if (textEditingInstanceSelector) {
-    return;
-  }
-  if (instancePath === undefined || instancePath.length === 1) {
-    return;
-  }
-  const [selectedItem, parentItem] = instancePath;
-  const selectedInstanceSelector = selectedItem.instanceSelector;
-  const instances = $instances.get();
-  if (!isComponentDetachable(selectedItem.instance.component)) {
-    toast.error(
-      "This instance can not be moved outside of its parent component."
-    );
-    return false;
-  }
-
-  if ($isContentMode.get()) {
-    // In content mode we are allowing to delete childen of the editable block
-    const editableInstanceSelector = findBlockSelector(
-      selectedInstanceSelector,
-      instances
-    );
-    if (editableInstanceSelector === undefined) {
-      builderApi.toast.info("You can't delete this instance in conent mode.");
-      return;
-    }
-
-    const isChildOfBlock =
-      selectedInstanceSelector.length - editableInstanceSelector.length === 1;
-
-    const isTemplateInstance =
-      instances.get(selectedInstanceSelector[0])?.component ===
-      blockTemplateComponent;
-
-    if (isTemplateInstance) {
-      builderApi.toast.info("You can't delete this instance in content mode.");
-      return;
-    }
-
-    if (!isChildOfBlock) {
-      builderApi.toast.info("You can't delete this instance in content mode.");
-      return;
-    }
-  }
-
-  // find next selected instance
-  let newSelectedInstanceSelector: undefined | InstanceSelector;
-  const parentInstanceSelector = parentItem.instanceSelector;
-  const siblingIds = parentItem.instance.children
-    .filter((child) => child.type === "id")
-    .map((child) => child.value);
-  const position = siblingIds.indexOf(selectedItem.instance.id);
-  const siblingId = siblingIds[position + 1] ?? siblingIds[position - 1];
-  if (siblingId) {
-    // select next or previous sibling if possible
-    newSelectedInstanceSelector = [siblingId, ...parentInstanceSelector];
-  } else {
-    // fallback to parent
-    newSelectedInstanceSelector = parentInstanceSelector;
-  }
-  updateWebstudioData((data) => {
-    if (deleteInstanceMutable(data, instancePath)) {
-      selectInstance(newSelectedInstanceSelector);
-    }
-  });
-};
-
-export const wrapIn = (component: string, tag?: string) => {
-  const instancePath = $selectedInstancePath.get();
-  // global root or body are selected
-  if (instancePath === undefined || instancePath.length === 1) {
-    return;
-  }
-  const [selectedItem, parentItem] = instancePath;
-  const selectedInstance = selectedItem.instance;
-  const newInstanceId = nanoid();
-  const newInstanceSelector = [newInstanceId, ...parentItem.instanceSelector];
-  const metas = $registeredComponentMetas.get();
-  try {
-    updateWebstudioData((data) => {
-      const isContent = isRichTextContent({
-        instanceSelector: selectedItem.instanceSelector,
-        instances: data.instances,
-        props: data.props,
-        metas,
-      });
-      if (isContent) {
-        toast.error(`Cannot wrap textual content`);
-        throw Error("Abort transaction");
-      }
-      const newInstance: Instance = {
-        type: "instance",
-        id: newInstanceId,
-        component,
-        children: [{ type: "id", value: selectedInstance.id }],
-      };
-      if (tag || component === elementComponent) {
-        newInstance.tag = tag ?? "div";
-      }
-      const parentInstance = data.instances.get(parentItem.instance.id);
-      data.instances.set(newInstanceId, newInstance);
-      if (parentInstance) {
-        for (const child of parentInstance.children) {
-          if (child.type === "id" && child.value === selectedInstance.id) {
-            child.value = newInstanceId;
-          }
-        }
-      }
-      const isSatisfying = isTreeSatisfyingContentModel({
-        instances: data.instances,
-        props: data.props,
-        metas,
-        instanceSelector: newInstanceSelector,
-      });
-      if (isSatisfying === false) {
-        const label = getInstanceLabel({ component, tag }, {});
-        toast.error(`Cannot wrap in ${label}`);
-        throw Error("Abort transaction");
-      }
-    });
-    selectInstance(newInstanceSelector);
-  } catch {
-    // do nothing
-  }
-};
-
-export const replaceWith = (component: string, tag?: string) => {
-  const instancePath = $selectedInstancePath.get();
-  // global root or body are selected
-  if (instancePath === undefined || instancePath.length === 1) {
-    return;
-  }
-  const [selectedItem] = instancePath;
-  const selectedInstance = selectedItem.instance;
-  const selectedInstanceSelector = selectedItem.instanceSelector;
-  const metas = $registeredComponentMetas.get();
-  const instanceTags = $instanceTags.get();
-  try {
-    updateWebstudioData((data) => {
-      const instance = data.instances.get(selectedInstance.id);
-      if (instance === undefined) {
-        return;
-      }
-      instance.component = component;
-      // replace with specified tag or with currently used
-      if (tag || component === elementComponent) {
-        instance.tag = tag ?? instanceTags.get(selectedInstance.id) ?? "div";
-        // delete legacy tag prop if specified
-        for (const prop of data.props.values()) {
-          if (prop.instanceId !== selectedInstance.id) {
-            continue;
-          }
-          if (prop.name === "tag") {
-            data.props.delete(prop.id);
-            continue;
-          }
-          const newName = reactPropsToStandardAttributes[prop.name];
-          if (newName) {
-            const newId = `${prop.instanceId}:${newName}`;
-            data.props.delete(prop.id);
-            data.props.set(newId, { ...prop, id: newId, name: newName });
-          }
-        }
-      }
-      const isSatisfying = isTreeSatisfyingContentModel({
-        instances: data.instances,
-        props: data.props,
-        metas,
-        instanceSelector: selectedInstanceSelector,
-      });
-      if (isSatisfying === false) {
-        const label = getInstanceLabel({ component, tag }, {});
-        toast.error(`Cannot replace with ${label}`);
-        throw Error("Abort transaction");
-      }
-    });
-  } catch {
-    // do nothing
-  }
-};
-
-export const unwrap = () => {
-  const instancePath = $selectedInstancePath.get();
-  // global root or body are selected
-  if (instancePath === undefined || instancePath.length === 1) {
-    return;
-  }
-  const [selectedItem, parentItem] = instancePath;
-  try {
-    updateWebstudioData((data) => {
-      const instanceSelector = findClosestNonTextualContainer({
-        metas: $registeredComponentMetas.get(),
-        props: data.props,
-        instances: data.instances,
-        instanceSelector: selectedItem.instanceSelector,
-      });
-      if (selectedItem.instanceSelector.join() !== instanceSelector.join()) {
-        toast.error(`Cannot unwrap textual instance`);
-        throw Error("Abort transaction");
-      }
-      const parentInstance = data.instances.get(parentItem.instance.id);
-      const selectedInstance = data.instances.get(selectedItem.instance.id);
-      data.instances.delete(selectedItem.instance.id);
-      if (parentInstance && selectedInstance) {
-        const index = parentInstance.children.findIndex(
-          (child) =>
-            child.type === "id" && child.value === selectedItem.instance.id
-        );
-        parentInstance.children.splice(index, 1, ...selectedInstance.children);
-      }
-      const matches = isTreeSatisfyingContentModel({
-        instances: data.instances,
-        props: data.props,
-        metas: $registeredComponentMetas.get(),
-        instanceSelector: parentItem.instanceSelector,
-      });
-      if (matches === false) {
-        toast.error(`Cannot unwrap instance`);
-        throw Error("Abort transaction");
-      }
-    });
-    selectInstance(parentItem.instanceSelector);
-  } catch {
-    // do nothing
-  }
-};
 
 export const { emitCommand, subscribeCommands } = createCommandsEmitter({
   source: "builder",
@@ -324,7 +86,10 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
 
     {
       name: "cancelCurrentDrag",
+      label: "Deselect",
+      description: "Cancel drag or deselect",
       hidden: true,
+      category: "General",
       defaultHotkeys: ["escape"],
       // radix check event.defaultPrevented before invoking callbacks
       preventDefault: false,
@@ -335,6 +100,7 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "clickCanvas",
+      description: "Click on canvas",
       hidden: true,
       handler: () => {
         $breakpointsMenuView.set(undefined);
@@ -346,6 +112,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
 
     {
       name: "togglePreviewMode",
+      description: "Preview mode",
+      category: "Top bar",
       defaultHotkeys: ["meta+shift+p", "ctrl+shift+p"],
       handler: () => {
         setActiveSidebarPanel("auto");
@@ -354,6 +122,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "toggleDesignMode",
+      description: "Toggle design mode",
+      category: "Top bar",
       defaultHotkeys: ["meta+shift+d", "ctrl+shift+d"],
       handler: () => {
         setActiveSidebarPanel("auto");
@@ -362,6 +132,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "toggleContentMode",
+      description: "Toggle content mode",
+      category: "Top bar",
       defaultHotkeys: ["meta+shift+c", "ctrl+shift+c"],
       handler: () => {
         setActiveSidebarPanel("auto");
@@ -370,12 +142,15 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "openBreakpointsMenu",
+      description: "Manage responsive breakpoints",
       handler: () => {
         $breakpointsMenuView.set("initial");
       },
     },
     {
       name: "openPublishDialog",
+      description: "Deploy your project",
+      category: "Top bar",
       defaultHotkeys: ["shift+P"],
       handler: () => {
         $publishDialog.set("publish");
@@ -384,6 +159,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "openExportDialog",
+      description: "Export project code",
+      category: "General",
       defaultHotkeys: ["shift+E"],
       handler: () => {
         $publishDialog.set("export");
@@ -392,6 +169,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "toggleComponentsPanel",
+      description: "Toggle components panel",
+      category: "Panels",
       defaultHotkeys: ["a"],
       handler: () => {
         if ($isDesignMode.get() === false) {
@@ -406,6 +185,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "toggleNavigatorPanel",
+      description: "Toggle navigator panel",
+      category: "Panels",
       defaultHotkeys: ["z"],
       handler: () => {
         toggleActiveSidebarPanel("navigator");
@@ -414,6 +195,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "openStylePanel",
+      description: "Open style panel",
+      category: "Panels",
       defaultHotkeys: ["s"],
       handler: () => {
         if ($isDesignMode.get() === false) {
@@ -428,6 +211,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "focusStyleSources",
+      description: "Focus style sources input",
+      category: "Style panel",
       defaultHotkeys: ["meta+enter", "ctrl+enter"],
       handler: () => {
         if ($isDesignMode.get() === false) {
@@ -438,13 +223,24 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
         }
         $activeInspectorPanel.set("style");
         requestAnimationFrame(() => {
-          $styleSourceInputElement.get()?.focus();
+          emitCommand("focusStyleSourceInput");
         });
       },
       disableOnInputLikeControls: true,
     },
     {
+      name: "focusStyleSourceInput",
+      description: "Focus style source input",
+      hidden: true,
+      handler: () => {
+        // This command is handled by the style panel component
+        // It's emitted by openStylePanel command
+      },
+    },
+    {
       name: "toggleStylePanelFocusMode",
+      description: "Toggle style panel focus mode",
+      category: "Style panel",
       defaultHotkeys: ["alt+shift+s"],
       handler: () => {
         setSetting(
@@ -456,6 +252,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "toggleStylePanelAdvancedMode",
+      description: "Toggle style panel advanced mode",
+      category: "Style panel",
       defaultHotkeys: ["alt+shift+a"],
       handler: () => {
         setSetting(
@@ -467,6 +265,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "openSettingsPanel",
+      description: "Open settings panel",
+      category: "Panels",
       defaultHotkeys: ["d"],
       handler: () => {
         $activeInspectorPanel.set("settings");
@@ -482,23 +282,40 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     makeBreakpointCommand("selectBreakpoint7", 7),
     makeBreakpointCommand("selectBreakpoint8", 8),
     makeBreakpointCommand("selectBreakpoint9", 9),
-    /*
-    // @todo: decide about keyboard shortcut, uncomment when ready
     {
-      name: "toggleAiCommandBar",
-      defaultHotkeys: ["space"],
-      // this disables hotkey for inputs on style panel
-      // but still work for input on canvas which call event.preventDefault() in keydown handler
-      disableOnInputLikeControls: true,
+      name: "copy",
+      description: "Copy selected instance",
+      category: "Navigator",
+      handler: copyInstance,
+    },
+    {
+      name: "paste",
+      description: "Paste copied instance",
+      category: "Navigator",
+      handler: emitPaste,
+    },
+    {
+      name: "cut",
+      description: "Cut selected instance",
+      category: "Navigator",
+      handler: cutInstance,
+    },
+    {
+      name: "toggleShow",
+      description: "Toggle instance visibility",
+      category: "Navigator",
       handler: () => {
-        $isAiCommandBarVisible.set($isAiCommandBarVisible.get() === false);
+        const instancePath = $selectedInstancePath.get();
+        if (instancePath?.[0]) {
+          toggleInstanceShow(instancePath[0].instance.id);
+        }
       },
     },
-    */
-
     {
       name: "deleteInstanceBuilder",
       label: "Delete Instance",
+      description: "Delete selected instance",
+      category: "Navigator",
       defaultHotkeys: ["backspace", "delete"],
       // See "deleteInstanceCanvas" for details on why the command is separated for the canvas and builder.
       disableHotkeyOutsideApp: true,
@@ -507,6 +324,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "duplicateInstance",
+      description: "Duplicate selected instance",
+      category: "Navigator",
       defaultHotkeys: ["meta+d", "ctrl+d"],
       handler: () => {
         const project = $project.get();
@@ -565,6 +384,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "editInstanceLabel",
+      description: "Edit instance label",
+      category: "Navigator",
       defaultHotkeys: ["meta+e", "ctrl+e"],
       handler: () => {
         const instancePath = $selectedInstancePath.get();
@@ -576,33 +397,38 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
       },
     },
     {
-      name: "wrapInElement",
-      label: "Wrap in an Element",
-      handler: () => wrapIn(elementComponent),
-    },
-    {
-      name: "wrapInLink",
-      label: "Wrap in a Link",
-      handler: () => wrapIn(elementComponent, "a"),
+      name: "wrap",
+      label: "Wrap",
+      description: "Wrap",
+      category: "Navigator",
+      defaultHotkeys: ["meta+alt+g", "ctrl+alt+g"],
+      keepCommandPanelOpen: true,
+      handler: () => {
+        showWrapComponentsList();
+      },
     },
     {
       name: "unwrap",
-      handler: () => unwrap(),
+      description: "Remove parent wrapper",
+      category: "Navigator",
+      defaultHotkeys: ["meta+shift+g", "ctrl+shift+g"],
+      handler: () => unwrapInstance(),
     },
     {
-      name: "replaceWithElement",
-      label: "Replace with an Element",
-      handler: () => replaceWith(elementComponent),
-    },
-    {
-      name: "replaceWithLink",
-      label: "Replace with a Link",
-      handler: () => replaceWith(elementComponent, "a"),
+      name: "convert",
+      label: "Convert",
+      description: "Convert component",
+      category: "Navigator",
+      keepCommandPanelOpen: true,
+      handler: () => {
+        showConvertComponentsList();
+      },
     },
 
     {
       name: "pasteTailwind",
       label: "Paste HTML with Tailwind classes",
+      description: "Convert Tailwind to CSS",
       handler: async () => {
         const html = await navigator.clipboard.readText();
         let fragment = generateFragmentFromHtml(html);
@@ -616,6 +442,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
 
     {
       name: "undo",
+      description: "Undo last action",
+      category: "General",
       // safari use meta+z to reopen closed tabs, here added ctrl as alternative
       defaultHotkeys: ["meta+z", "ctrl+z"],
       disableOnInputLikeControls: true,
@@ -625,6 +453,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
     },
     {
       name: "redo",
+      description: "Redo last action",
+      category: "General",
       // safari use meta+z to reopen closed tabs, here added ctrl as alternative
       defaultHotkeys: ["meta+shift+z", "ctrl+shift+z"],
       disableOnInputLikeControls: true,
@@ -635,6 +465,8 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
 
     {
       name: "save",
+      description: "Save project",
+      category: "General",
       defaultHotkeys: ["meta+s", "ctrl+s"],
       handler: async () => {
         toast.dismiss("save-success");
@@ -651,12 +483,65 @@ export const { emitCommand, subscribeCommands } = createCommandsEmitter({
 
     {
       name: "openCommandPanel",
-      hidden: true,
+      description: "Open command panel",
+      category: "General",
       defaultHotkeys: ["meta+k", "ctrl+k"],
       handler: () => {
         if ($isDesignMode.get()) {
           openCommandPanel();
         }
+      },
+    },
+
+    {
+      name: "deleteUnusedTokens",
+      label: "Delete unused tokens",
+      description: "Remove unused tokens",
+      handler: () => {
+        openDeleteUnusedTokensDialog();
+      },
+    },
+
+    {
+      name: "findDuplicateTokens",
+      label: "Find duplicate tokens",
+      description: "Find tokens with identical styles or names",
+      handler: () => {
+        // Import needed to avoid circular dependency
+        import(
+          "~/builder/features/command-panel/groups/duplicate-tokens-group"
+        ).then(({ showDuplicateTokensView }) => {
+          showDuplicateTokensView();
+        });
+      },
+    },
+
+    {
+      name: "deleteUnusedDataVariables",
+      label: "Delete unused data variables",
+      description: "Remove unused data variables",
+      handler: () => {
+        openDeleteUnusedDataVariablesDialog();
+      },
+    },
+
+    {
+      name: "deleteUnusedCssVariables",
+      label: "Delete unused CSS variables",
+      description: "Remove unused CSS variables",
+      handler: () => {
+        openDeleteUnusedCssVariablesDialog();
+      },
+    },
+
+    {
+      name: "openKeyboardShortcuts",
+      description: "View keyboard shortcuts",
+      category: "General",
+      defaultHotkeys: ["shift+?"],
+      disableOnInputLikeControls: true,
+      handler: () => {
+        openKeyboardShortcutsDialog();
       },
     },
   ],

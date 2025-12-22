@@ -12,7 +12,10 @@ import {
 } from "@webstudio-is/design-system";
 import { useSubscribe, type Publish } from "~/shared/pubsub";
 import { $canvasRect, $scale } from "~/builder/shared/nano-states";
-import { InstanceIcon, InstanceLabel } from "~/builder/shared/instance-label";
+import {
+  InstanceIcon,
+  getInstanceLabel,
+} from "~/builder/shared/instance-label";
 
 const DragLayer = ({
   component,
@@ -32,7 +35,7 @@ const DragLayer = ({
       }}
     >
       <ComponentCard
-        label={<InstanceLabel instance={{ component }} />}
+        label={getInstanceLabel({ component })}
         icon={<InstanceIcon size="auto" instance={{ component }} />}
         style={{
           transform: `translate3d(${point.x}px, ${point.y}px, 0)`,
@@ -87,6 +90,7 @@ export const useDraggable = ({
   availableComponents: Set<string>;
 }) => {
   const [dragComponent, setDragComponent] = useState<Instance["component"]>();
+  const [isDragging, setIsDragging] = useState(false);
   const [point, setPoint] = useState<Point>({ x: 0, y: 0 });
   const canvasRect = useStore($canvasRect);
   const scale = useStore($scale);
@@ -99,6 +103,7 @@ export const useDraggable = ({
     },
     onStart({ data: componentName }) {
       setDragComponent(componentName);
+      setIsDragging(true);
       publish({
         type: "dragStart",
         payload: {
@@ -120,6 +125,7 @@ export const useDraggable = ({
     },
     onEnd({ isCanceled }) {
       setDragComponent(undefined);
+      setIsDragging(false);
       publish({
         type: "dragEnd",
         payload: { isCanceled },
@@ -140,5 +146,6 @@ export const useDraggable = ({
   return {
     dragCard,
     draggableContainerRef: dragHandlers.rootRef,
+    isDragging,
   };
 };

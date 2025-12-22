@@ -57,6 +57,9 @@ import {
   $project,
   $publishedOrigin,
   $userPlanFeatures,
+  $stagingUsername,
+  $stagingPassword,
+  $publisherHost,
 } from "~/shared/nano-states";
 import {
   $publishDialog,
@@ -66,12 +69,12 @@ import { Domains, PENDING_TIMEOUT, getPublishStatusAndText } from "./domains";
 import { CollapsibleDomainSection } from "./collapsible-domain-section";
 import {
   CheckCircleIcon,
-  ExternalLinkIcon,
   AlertIcon,
   CopyIcon,
   GearIcon,
   UpgradeIcon,
   HelpIcon,
+  InfoCircleIcon,
 } from "@webstudio-is/icons";
 import { AddDomain } from "./add-domain";
 import { humanizeString } from "~/shared/string-utils";
@@ -82,10 +85,10 @@ import {
   type Templates,
 } from "@webstudio-is/sdk";
 import { DomainCheckbox, domainToPublishName } from "./domain-checkbox";
-import { CopyToClipboard } from "~/builder/shared/copy-to-clipboard";
+import { CopyToClipboard } from "~/shared/copy-to-clipboard";
 import { $openProjectSettings } from "~/shared/nano-states/project-settings";
 import { RelativeTime } from "~/builder/shared/relative-time";
-import cmsUpgradeBanner from "../settings-panel/cms-upgrade-banner.svg?url";
+import cmsUpgradeBanner from "~/shared/cms-upgrade-banner.svg?url";
 
 type ChangeProjectDomainProps = {
   project: Project;
@@ -100,6 +103,9 @@ const ChangeProjectDomain = ({
   const id = useId();
   const publishedOrigin = useStore($publishedOrigin);
   const selectedPagePath = useStore($selectedPagePath);
+  const stagingUsername = useStore($stagingUsername);
+  const stagingPassword = useStore($stagingPassword);
+  const publisherHost = useStore($publisherHost);
 
   const [domain, setDomain] = useState(project.domain);
   const [error, setError] = useState<string>();
@@ -107,6 +113,16 @@ const ChangeProjectDomain = ({
 
   const pageUrl = new URL(publishedOrigin);
   pageUrl.pathname = selectedPagePath;
+
+  // Add username:password@ for staging domains
+  if (
+    stagingUsername &&
+    stagingPassword &&
+    pageUrl.hostname.endsWith(`.${publisherHost}`)
+  ) {
+    pageUrl.username = stagingUsername;
+    pageUrl.password = stagingPassword;
+  }
 
   const updateProjectDomain = async () => {
     setIsUpdateInProgress(true);
@@ -179,31 +195,23 @@ const ChangeProjectDomain = ({
               )}
             </Flex>
           </Tooltip>
-          <Tooltip
-            content={
-              <Text css={{ wordBreak: "break-all" }}>
-                Proceed to {pageUrl.toString()}
-              </Text>
-            }
-            variant="wrapped"
+
+          <CopyToClipboard
+            text={pageUrl.toString()}
+            copyText={`Copy link: ${pageUrl.toString()}`}
           >
-            <IconButton
-              type="button"
-              tabIndex={-1}
-              onClick={(event) => {
-                window.open(pageUrl, "_blank");
-                event.preventDefault();
-              }}
-            >
-              <ExternalLinkIcon />
+            <IconButton type="button" tabIndex={-1}>
+              <CopyIcon />
             </IconButton>
-          </Tooltip>
+          </CopyToClipboard>
         </Grid>
       }
     >
-      <Grid gap={3}>
-        <Grid gap={1}>
-          <Label htmlFor={id}>Domain:</Label>
+      <Grid gap={2}>
+        <Grid flow="column" align="center" gap={2}>
+          <Label htmlFor={id} css={{ width: theme.spacing[20] }}>
+            Domain:
+          </Label>
           <InputField
             text="mono"
             id={id}
@@ -231,14 +239,55 @@ const ChangeProjectDomain = ({
           />
           {error !== undefined && <Text color="destructive">{error}</Text>}
         </Grid>
+        {stagingUsername && (
+          <Grid flow="column" align="center" gap={2}>
+            <Label
+              htmlFor={`${id}-username`}
+              css={{ width: theme.spacing[20] }}
+            >
+              Username:
+            </Label>
+            <InputField
+              text="mono"
+              id={`${id}-username`}
+              type="text"
+              value={stagingUsername}
+              readOnly
+            />
+          </Grid>
+        )}
+        {stagingPassword && (
+          <Grid flow="column" align="center" gap={2}>
+            <Flex align="center" gap={1} css={{ width: theme.spacing[20] }}>
+              <Label htmlFor={`${id}-password`}>Password:</Label>
+              <Tooltip
+                content="This password is read-only and cannot be changed. It is the same for every user. This prevents phishing attacks."
+                variant="wrapped"
+              >
+                <InfoCircleIcon
+                  tabIndex={0}
+                  style={{ flexShrink: 0 }}
+                  color={rawTheme.colors.foregroundSubtle}
+                />
+              </Tooltip>
+            </Flex>
+            <InputField
+              text="mono"
+              id={`${id}-password`}
+              type="text"
+              value={stagingPassword}
+              readOnly
+            />
+          </Grid>
+        )}
       </Grid>
     </CollapsibleDomainSection>
   );
 };
 
 const $usedProFeatures = computed(
-  [$pages, $dataSources, $instances],
-  (pages, dataSources, instances) => {
+  [$pages, $dataSources, $instances, $project],
+  (pages, dataSources, instances, project) => {
     const features = new Map<
       string,
       | undefined
@@ -285,11 +334,42 @@ const $usedProFeatures = computed(
       }
     }
 
-    // temporary ignore features checks
-    // return features;
-    return new Map() as typeof features;
+    // Custom domains
+    if (project && project.domainsVirtual.length > 0) {
+      features.set("Custom domain", undefined);
+    }
+
+    return features;
   }
 );
+
+const usePublishCountdown = (isPublishing: boolean) => {
+  const [countdown, setCountdown] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (isPublishing === false) {
+      setCountdown(undefined);
+      return;
+    }
+
+    setCountdown(60);
+
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev === undefined || prev <= 0) {
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [isPublishing]);
+
+  return countdown;
+};
 
 const Publish = ({
   project,
@@ -310,6 +390,7 @@ const Publish = ({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [hasSelectedDomains, setHasSelectedDomains] = useState(false);
   const hasProPlan = useStore($userPlanFeatures).hasProPlan;
+  const countdown = usePublishCountdown(isPublishing);
 
   useEffect(() => {
     if (hasProPlan === false) {
@@ -466,6 +547,8 @@ const Publish = ({
     : false;
 
   const isPublishInProgress = isPublishing || hasPendingState;
+  const showPendingState =
+    isPublishInProgress && (countdown === undefined || countdown === 0);
 
   return (
     <Flex gap={2} shrink={false} direction={"column"}>
@@ -484,10 +567,12 @@ const Publish = ({
           ref={buttonRef}
           formAction={handlePublish}
           color="positive"
-          state={isPublishInProgress ? "pending" : undefined}
+          state={showPendingState ? "pending" : undefined}
           disabled={hasSelectedDomains === false || disabled}
         >
-          Publish
+          {countdown !== undefined && countdown > 0
+            ? `Publishing (${countdown}s)`
+            : "Publish"}
         </Button>
       </Tooltip>
     </Flex>
@@ -819,6 +904,8 @@ const Content = (props: {
 
   const project = useStore($project);
 
+  const hasCustomDomains = (project?.domainsVirtual.length ?? 0) > 0;
+
   if (project == null) {
     throw new Error("Project not found");
   }
@@ -865,7 +952,9 @@ const Content = (props: {
           refresh={refreshProject}
           timesLeft={maxPublishesAllowedPerUser - userPublishCount}
           disabled={
-            (usedProFeatures.size > 0 && hasProPlan === false) ||
+            (usedProFeatures.size > 0 &&
+              hasProPlan === false &&
+              hasCustomDomains) ||
             userPublishCount >= maxPublishesAllowedPerUser
           }
         />

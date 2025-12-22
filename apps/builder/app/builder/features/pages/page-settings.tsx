@@ -53,17 +53,13 @@ import {
   PanelBanner,
   css,
   Switch,
-  PanelTitle,
   TitleSuffixSpacer,
-  FloatingPanelProvider,
   ProBadge,
-  Dialog,
   DialogClose,
-  DialogContent,
   DialogTitle,
+  DialogTitleActions,
 } from "@webstudio-is/design-system";
 import {
-  ChevronsLeftIcon,
   CopyIcon,
   TrashIcon,
   HomeIcon,
@@ -71,7 +67,6 @@ import {
   UploadIcon,
 } from "@webstudio-is/icons";
 import { useIds } from "~/shared/form-utils";
-import { updateWebstudioData } from "~/shared/instance-utils";
 import {
   $assets,
   $instances,
@@ -85,9 +80,9 @@ import {
   BindingControl,
   BindingPopover,
 } from "~/builder/shared/binding-popover";
-import { serverSyncStore } from "~/shared/sync";
+import { serverSyncStore } from "~/shared/sync/sync-stores";
 // @todo should be moved to shared because features should not depend on features
-import { ImageControl } from "~/builder/features/project-settings";
+import { ImageControl } from "~/shared/project-settings";
 // @todo should be moved to shared because features should not depend on features
 import { useEffectEvent } from "~/shared/hook-utils/effect-event";
 import {
@@ -105,7 +100,6 @@ import { SearchPreview } from "./search-preview";
 import { SocialPreview } from "./social-preview";
 import {
   registerFolderChildMutable,
-  deletePageMutable,
   $pageRootScope,
   duplicatePage,
   isPathAvailable,
@@ -1248,7 +1242,6 @@ export const NewPageSettings = ({
 const NewPageSettingsView = ({
   onSubmit,
   isSubmitting,
-  onClose,
   children,
 }: {
   onSubmit: () => void;
@@ -1258,20 +1251,9 @@ const NewPageSettingsView = ({
 }) => {
   return (
     <>
-      <PanelTitle
+      <DialogTitle
         suffix={
-          <>
-            <Tooltip content="Cancel" side="bottom">
-              <Button
-                onClick={onClose}
-                aria-label="Cancel"
-                prefix={<ChevronsLeftIcon />}
-                color="ghost"
-                // Tab should go:
-                //   trought form fields -> create button -> cancel button
-                tabIndex={3}
-              />
-            </Tooltip>
+          <DialogTitleActions>
             <TitleSuffixSpacer />
             <Button
               state={isSubmitting ? "pending" : "auto"}
@@ -1280,12 +1262,12 @@ const NewPageSettingsView = ({
             >
               {isSubmitting ? "Creating" : "Create page"}
             </Button>
-          </>
+            <DialogClose />
+          </DialogTitleActions>
         }
       >
         New Page Settings
-      </PanelTitle>
-      <Separator />
+      </DialogTitle>
       <Form onSubmit={onSubmit}>{children}</Form>
     </>
   );
@@ -1471,7 +1453,7 @@ export const PageSettings = ({
 }: {
   onClose: () => void;
   onDuplicate: (newPageId: string) => void;
-  onDelete: () => void;
+  onDelete?: () => void;
   pageId: string;
 }) => {
   const pages = useStore($pages);
@@ -1480,9 +1462,6 @@ export const PageSettings = ({
   const isHomePage = page?.id === pages?.homePage.id;
 
   const [unsavedValues, setUnsavedValues] = useState<Partial<Values>>({});
-
-  const [showDeleteConfirmation, setShowDeleteConfirmation] =
-    useState<boolean>(false);
 
   const values: Values = {
     ...(page ? toFormValues(page, pages, isHomePage) : fieldDefaultValues),
@@ -1540,14 +1519,9 @@ export const PageSettings = ({
   });
 
   const handleRequestDelete = () => {
-    setShowDeleteConfirmation(true);
-  };
-
-  const hanldeDelete = () => {
-    updateWebstudioData((data) => {
-      deletePageMutable(pageId, data);
-    });
-    onDelete();
+    if (onDelete) {
+      onDelete();
+    }
   };
 
   if (page === undefined) {
@@ -1577,68 +1551,7 @@ export const PageSettings = ({
       >
         <FormFields errors={errors} values={values} onChange={handleChange} />
       </PageSettingsView>
-      {showDeleteConfirmation && page && (
-        <DeleteConfirmationDialog
-          page={page}
-          onClose={() => {
-            setShowDeleteConfirmation(false);
-          }}
-          onConfirm={() => {
-            setShowDeleteConfirmation(false);
-            hanldeDelete();
-          }}
-        />
-      )}
     </>
-  );
-};
-
-type DeleteConfirmationDialogProps = {
-  onClose: () => void;
-  onConfirm: () => void;
-  page: Page;
-};
-
-const DeleteConfirmationDialog = ({
-  onClose,
-  onConfirm,
-  page,
-}: DeleteConfirmationDialogProps) => {
-  return (
-    <Dialog
-      open
-      onOpenChange={(isOpen) => {
-        if (isOpen === false) {
-          onClose();
-        }
-      }}
-    >
-      <DialogContent>
-        <Flex gap="3" direction="column" css={{ padding: theme.panel.padding }}>
-          <Text>{`Are you sure you want to delete "${page.name}"?`}</Text>
-          <Text>
-            You can undo it even if you delete the page as long as you don't
-            reload.
-          </Text>
-          <Flex direction="rowReverse" gap="2">
-            <DialogClose>
-              <Button
-                color="destructive"
-                onClick={() => {
-                  onConfirm();
-                }}
-              >
-                Delete Page
-              </Button>
-            </DialogClose>
-            <DialogClose>
-              <Button color="ghost">Cancel</Button>
-            </DialogClose>
-          </Flex>
-        </Flex>
-        <DialogTitle>Delete Page</DialogTitle>
-      </DialogContent>
-    </Dialog>
   );
 };
 
@@ -1657,9 +1570,9 @@ const PageSettingsView = ({
   const containerRef = useRef<HTMLFormElement>(null);
   return (
     <>
-      <PanelTitle
+      <DialogTitle
         suffix={
-          <>
+          <DialogTitleActions>
             {isDesignMode && onDelete && (
               <Tooltip content="Delete page" side="bottom">
                 <Button
@@ -1682,29 +1595,17 @@ const PageSettingsView = ({
                 />
               </Tooltip>
             )}
-
-            <Tooltip content="Close page settings" side="bottom">
-              <Button
-                color="ghost"
-                prefix={<ChevronsLeftIcon />}
-                onClick={onClose}
-                aria-label="Close page settings"
-                tabIndex={2}
-              />
-            </Tooltip>
-          </>
+            <DialogClose />
+          </DialogTitleActions>
         }
       >
         Page Settings
-      </PanelTitle>
-      <Separator />
-      <FloatingPanelProvider container={containerRef}>
-        <Form onSubmit={onClose} ref={containerRef}>
-          <fieldset style={{ display: "contents" }} disabled={!isDesignMode}>
-            {children}
-          </fieldset>
-        </Form>
-      </FloatingPanelProvider>
+      </DialogTitle>
+      <Form onSubmit={onClose} ref={containerRef} data-floating-panel-container>
+        <fieldset style={{ display: "contents" }} disabled={!isDesignMode}>
+          {children}
+        </fieldset>
+      </Form>
     </>
   );
 };

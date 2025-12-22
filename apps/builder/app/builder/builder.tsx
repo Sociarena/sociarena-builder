@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
 import { useStore } from "@nanostores/react";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
-import { usePublish, $publisher } from "~/shared/pubsub";
-import type { Build } from "@webstudio-is/project-build";
-import type { Project } from "@webstudio-is/project";
-import { theme, Box, type CSS, Flex, Grid } from "@webstudio-is/design-system";
-import type { AuthPermit } from "@webstudio-is/trpc-interface/index.server";
-import { registerContainers, createObjectPool } from "~/shared/sync";
 import {
-  ServerSyncStorage,
-  startProjectSync,
-  useSyncServer,
-} from "./shared/sync/sync-server";
-import { SidebarLeft } from "./sidebar-left";
+  theme,
+  Box,
+  type CSS,
+  Flex,
+  Grid,
+  rawTheme,
+} from "@webstudio-is/design-system";
+import type { AuthPermit } from "@webstudio-is/trpc-interface/index.server";
+import { initializeClientSync, getSyncClient } from "~/shared/sync/sync-client";
+import { usePreventUnload } from "~/shared/sync/project-queue";
+import { usePublish, $publisher } from "~/shared/pubsub";
 import { Inspector } from "./inspector";
 import { Topbar } from "./features/topbar";
 import { Footer } from "./features/footer";
@@ -29,11 +29,12 @@ import {
   $project,
   subscribeResources,
   $authTokenPermissions,
-  $publisherHost,
   $isDesignMode,
   $isContentMode,
   $userPlanFeatures,
   subscribeModifierKeys,
+  $stagingUsername,
+  $stagingPassword,
 } from "~/shared/nano-states";
 import { $settings, type Settings } from "./shared/client-settings";
 import { builderUrl, getCanvasUrl } from "~/shared/router-utils";
@@ -41,14 +42,13 @@ import { BlockingAlerts } from "./features/blocking-alerts";
 import { useSyncPageUrl } from "~/shared/pages";
 import { useMount, useUnmount } from "~/shared/hook-utils/use-mount";
 import { subscribeCommands } from "~/builder/shared/commands";
-import { ProjectSettings } from "./features/project-settings";
+import { ProjectSettings } from "~/shared/project-settings";
 import type { UserPlanFeatures } from "~/shared/db/user-plan-features.server";
 import {
   $activeSidebarPanel,
   $dataLoadingState,
   $isCloneDialogOpen,
   $loadingState,
-  type SidebarPanelName,
 } from "./shared/nano-states";
 import { CloneProjectDialog } from "~/shared/clone-project";
 import type { TokenPermissions } from "@webstudio-is/authorization-token";
@@ -59,6 +59,11 @@ import { migrateWebstudioDataMutable } from "~/shared/webstudio-data-migrator";
 import { Loading, LoadingBackground } from "./shared/loading";
 import { mergeRefs } from "@react-aria/utils";
 import { CommandPanel } from "./features/command-panel";
+import { DeleteUnusedTokensDialog } from "~/builder/shared/style-source-actions";
+import { DeleteUnusedDataVariablesDialog } from "~/builder/shared/data-variable-utils";
+import { DeleteUnusedCssVariablesDialog } from "~/builder/shared/css-variable-utils";
+import { KeyboardShortcutsDialog } from "./features/keyboard-shortcuts-dialog";
+import { TokenConflictDialog } from "~/shared/token-conflict-dialog";
 
 import {
   initCopyPaste,
@@ -66,10 +71,10 @@ import {
 } from "~/shared/copy-paste/init-copy-paste";
 import { useInertHandlers } from "./shared/inert-handlers";
 import { TextToolbar } from "./features/workspace/canvas-tools/text-toolbar";
-import { SyncClient } from "~/shared/sync-client";
 import { RemoteDialog } from "./features/help/remote-dialog";
-
-registerContainers();
+import type { SidebarPanelName } from "./sidebar-left/types";
+import { SidebarLeft } from "./sidebar-left/sidebar-left";
+import { useDisableContextMenu } from "./shared/use-disable-context-menu";
 
 const useSetWindowTitle = () => {
   const project = useStore($project);
@@ -139,10 +144,12 @@ const getChromeLayout = ({
   isPreviewMode,
   navigatorLayout,
   activeSidebarPanel,
+  leftSidebarWidth,
 }: {
   isPreviewMode: boolean;
   navigatorLayout: Settings["navigatorLayout"];
   activeSidebarPanel?: SidebarPanelName;
+  leftSidebarWidth: number;
 }) => {
   if (isPreviewMode) {
     return {
@@ -157,7 +164,7 @@ const getChromeLayout = ({
 
   if (navigatorLayout === "undocked" && activeSidebarPanel !== "none") {
     return {
-      gridTemplateColumns: `auto ${theme.sizes.sidebarWidth} 1fr ${theme.sizes.sidebarWidth}`,
+      gridTemplateColumns: `auto ${leftSidebarWidth}px 1fr ${theme.sizes.sidebarWidth}`,
       gridTemplateAreas: `
             "header header header header"
             "sidebar navigator main inspector"
@@ -176,16 +183,26 @@ const getChromeLayout = ({
   };
 };
 
+const defaultSidebarWidth = Number.parseFloat(rawTheme.spacing[30]);
+
 const ChromeWrapper = ({
   children,
   isPreviewMode,
   navigatorLayout,
 }: ChromeWrapperProps) => {
   const activeSidebarPanel = useStore($activeSidebarPanel);
+  const settings = useStore($settings);
+  const leftSidebarWidth =
+    activeSidebarPanel === "none"
+      ? defaultSidebarWidth
+      : (settings.sidebarPanelWidths[activeSidebarPanel] ??
+        defaultSidebarWidth);
+
   const gridLayout = getChromeLayout({
     isPreviewMode,
     navigatorLayout,
     activeSidebarPanel,
+    leftSidebarWidth,
   });
 
   return (
@@ -203,55 +220,45 @@ const ChromeWrapper = ({
   );
 };
 
-const builderClient = new SyncClient({
-  role: "leader",
-  object: createObjectPool(),
-  storages: [new ServerSyncStorage()],
-});
-
 export type BuilderProps = {
-  project: Project;
-  publisherHost: string;
-  build: Pick<Build, "id" | "version">;
+  projectId: string;
   authToken?: string;
   authPermit: AuthPermit;
   authTokenPermissions: TokenPermissions;
   userPlanFeatures: UserPlanFeatures;
+  stagingUsername: string;
+  stagingPassword: string;
 };
 
 export const Builder = ({
-  project,
-  publisherHost,
-  build,
+  projectId,
   authToken,
   authPermit,
   userPlanFeatures,
   authTokenPermissions,
+  stagingUsername,
+  stagingPassword,
 }: BuilderProps) => {
   useMount(initBuilderApi);
 
   useMount(() => {
     // additional data stores
-    $project.set(project);
-    $publisherHost.set(publisherHost);
     $authPermit.set(authPermit);
     $authToken.set(authToken);
     $userPlanFeatures.set(userPlanFeatures);
     $authTokenPermissions.set(authTokenPermissions);
+    $stagingUsername.set(stagingUsername);
+    $stagingPassword.set(stagingPassword);
 
     const controller = new AbortController();
 
     $dataLoadingState.set("loading");
-    builderClient.connect({
+    initializeClientSync({
+      projectId,
+      authPermit,
+      authToken,
       signal: controller.signal,
       onReady() {
-        startProjectSync({
-          projectId: project.id,
-          buildId: build.id,
-          version: build.version,
-          authPermit,
-          authToken,
-        });
         updateWebstudioData((data) => {
           migrateWebstudioDataMutable(data);
         });
@@ -264,6 +271,7 @@ export const Builder = ({
         // @todo make needs error handling and error state? e.g. a toast
       },
     });
+
     return () => {
       $dataLoadingState.set("idle");
       controller.abort("unmount");
@@ -273,6 +281,7 @@ export const Builder = ({
   useToastErrors();
   useEffect(subscribeCommands, []);
   useEffect(subscribeResources, []);
+  useDisableContextMenu();
 
   useUnmount(() => {
     $pages.set(undefined);
@@ -285,10 +294,9 @@ export const Builder = ({
     $publisher.set({ publish });
   }, [publish]);
 
-  useSyncServer({
-    projectId: project.id,
-    authPermit,
-  });
+  const project = useStore($project);
+
+  usePreventUnload();
   const isCloneDialogOpen = useStore($isCloneDialogOpen);
   const isPreviewMode = useStore($isPreviewMode);
   const isDesignMode = useStore($isDesignMode);
@@ -300,10 +308,13 @@ export const Builder = ({
     () =>
       mergeRefs((element: HTMLIFrameElement | null) => {
         if (element?.contentWindow) {
-          // added to iframe window and stored in local variable right away to prevent
-          // overriding in emebedded scripts on canvas
-          element.contentWindow.__webstudioSharedSyncEmitter__ =
-            builderClient.emitter;
+          const client = getSyncClient();
+          if (client) {
+            // added to iframe window and stored in local variable right away to prevent
+            // overriding in emebedded scripts on canvas
+            element.contentWindow.__webstudioSharedSyncEmitter__ =
+              client.emitter;
+          }
         }
       }, publishRef),
     [publishRef]
@@ -350,6 +361,15 @@ export const Builder = ({
 
   const inertHandlers = useInertHandlers();
 
+  // Show loading screen if project isn't ready yet
+  if (!project || dataLoadingState !== "loaded") {
+    return (
+      <TooltipProvider>
+        <Loading state={loadingState} />
+      </TooltipProvider>
+    );
+  }
+
   return (
     <TooltipProvider>
       <div
@@ -362,18 +382,14 @@ export const Builder = ({
           isPreviewMode={isPreviewMode}
           navigatorLayout={navigatorLayout}
         >
+          <Box
+            data-dialog-boundary
+            css={{
+              gridArea: "sidebar / sidebar / main / inspector",
+              pointerEvents: "none",
+            }}
+          />
           <ProjectSettings />
-          <Main>
-            <Workspace>
-              {dataLoadingState === "loaded" && (
-                <CanvasIframe
-                  ref={iframeRefCallback}
-                  src={canvasUrl}
-                  title={project.title}
-                />
-              )}
-            </Workspace>
-          </Main>
 
           <SidePanel
             gridArea="sidebar"
@@ -383,6 +399,22 @@ export const Builder = ({
           >
             <SidebarLeft publish={publish} />
           </SidePanel>
+          {/* Main must be after left sidebar panels because in content mode the Plus button must be above the left sidebar, otherwise it won't be visible when content is full width */}
+          <Main>
+            <Workspace>
+              {dataLoadingState === "loaded" && project && (
+                <CanvasIframe
+                  ref={iframeRefCallback}
+                  src={canvasUrl}
+                  title={project.title}
+                />
+              )}
+            </Workspace>
+          </Main>
+          <Main css={{ pointerEvents: "none" }}>
+            <CanvasToolsContainer />
+          </Main>
+
           <SidePanel
             gridArea="inspector"
             isPreviewMode={isPreviewMode}
@@ -402,43 +434,49 @@ export const Builder = ({
           >
             <Inspector navigatorLayout={navigatorLayout} />
           </SidePanel>
-          <Main css={{ pointerEvents: "none" }}>
-            <CanvasToolsContainer />
-          </Main>
-          <Topbar
-            project={project}
-            hasProPlan={userPlanFeatures.hasProPlan}
-            css={{ gridArea: "header" }}
-            loading={
-              <LoadingBackground
-                // Looks nicer when topbar is already visible earlier, so user has more sense of progress.
-                show={
-                  loadingState.readyStates.get("dataLoadingState")
-                    ? false
-                    : true
-                }
-              />
-            }
-          />
+          {project ? (
+            <Topbar
+              project={project}
+              hasProPlan={userPlanFeatures.hasProPlan}
+              css={{ gridArea: "header" }}
+              loading={
+                <LoadingBackground
+                  // Looks nicer when topbar is already visible earlier, so user has more sense of progress.
+                  show={
+                    loadingState.readyStates.get("dataLoadingState")
+                      ? false
+                      : true
+                  }
+                />
+              }
+            />
+          ) : null}
           <Main css={{ pointerEvents: "none" }}>
             <TextToolbar />
           </Main>
           {isPreviewMode === false && <Footer />}
-          <CloneProjectDialog
-            isOpen={isCloneDialogOpen}
-            onOpenChange={$isCloneDialogOpen.set}
-            project={project}
-            onCreate={(projectId) => {
-              window.location.href = builderUrl({
-                origin: window.origin,
-                projectId: projectId,
-              });
-            }}
-          />
+          {project ? (
+            <CloneProjectDialog
+              isOpen={isCloneDialogOpen}
+              onOpenChange={$isCloneDialogOpen.set}
+              project={project}
+              onCreate={(projectId) => {
+                window.location.href = builderUrl({
+                  origin: window.origin,
+                  projectId: projectId,
+                });
+              }}
+            />
+          ) : null}
         </ChromeWrapper>
         <Loading state={loadingState} />
         <BlockingAlerts />
         <CommandPanel />
+        <DeleteUnusedTokensDialog />
+        <DeleteUnusedDataVariablesDialog />
+        <DeleteUnusedCssVariablesDialog />
+        <KeyboardShortcutsDialog />
+        <TokenConflictDialog />
         <RemoteDialog />
       </div>
     </TooltipProvider>

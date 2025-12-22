@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  IconButton,
   css,
   Flex,
   Text,
@@ -15,15 +10,10 @@ import {
   Link,
   Box,
 } from "@webstudio-is/design-system";
-import { InfoCircleIcon, EllipsesIcon } from "@webstudio-is/icons";
+import { InfoCircleIcon } from "@webstudio-is/icons";
 import type { DashboardProject } from "@webstudio-is/dashboard";
 import { builderUrl } from "~/shared/router-utils";
-import {
-  RenameProjectDialog,
-  DeleteProjectDialog,
-  useCloneProject,
-  ShareProjectDialog,
-} from "./project-dialogs";
+import { ProjectDialogs, type DialogType } from "./project-dialogs";
 import {
   ThumbnailLinkWithAbbr,
   ThumbnailLinkWithImage,
@@ -31,7 +21,9 @@ import {
 import { Spinner } from "../shared/spinner";
 import { Card, CardContent, CardFooter } from "../shared/card";
 import type { User } from "~/shared/db/user.server";
-import { TagsDialog } from "./tags";
+import type { UserPlanFeatures } from "~/shared/db/user-plan-features.server";
+import { ProjectMenu } from "./project-menu";
+import { formatDate } from "./utils";
 
 const infoIconStyle = css({ flexShrink: 0 });
 
@@ -58,55 +50,9 @@ const PublishedLink = ({
   );
 };
 
-const Menu = ({
-  tabIndex,
-  onDelete,
-  onRename,
-  onDuplicate,
-  onShare,
-  onUpdateTags,
-}: {
-  tabIndex: number;
-  onDelete: () => void;
-  onRename: () => void;
-  onDuplicate: () => void;
-  onShare: () => void;
-  onUpdateTags: () => void;
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-  return (
-    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
-      <DropdownMenuTrigger asChild>
-        <IconButton
-          aria-label="Menu Button"
-          tabIndex={tabIndex}
-          css={{ alignSelf: "center" }}
-        >
-          <EllipsesIcon width={15} height={15} />
-        </IconButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" css={{ width: theme.spacing[24] }}>
-        <DropdownMenuItem onSelect={onDuplicate}>Duplicate</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onRename}>Rename</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onShare}>Share</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onUpdateTags}>Tags</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onDelete}>Delete</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-};
-
-const formatDate = (date: string) => {
-  return new Date(date).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-};
-
 type ProjectCardProps = {
   project: DashboardProject;
-  hasProPlan: boolean;
+  userPlanFeatures: UserPlanFeatures;
   publisherHost: string;
   projectsTags: User["projectsTags"];
 };
@@ -123,7 +69,7 @@ export const ProjectCard = ({
     tags,
     domainsVirtual,
   },
-  hasProPlan,
+  userPlanFeatures,
   publisherHost,
   projectsTags,
   ...props
@@ -134,12 +80,8 @@ export const ProjectCard = ({
       d.status === "ACTIVE" && d.verified
   )?.domain;
   const displayDomain = customDomain ?? `${domain}.${publisherHost}`;
-  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
-  const [isTagsDialogOpen, setIsTagsDialogOpen] = useState(false);
+  const [openDialog, setOpenDialog] = useState<DialogType | undefined>();
   const [isHidden, setIsHidden] = useState(false);
-  const handleCloneProject = useCloneProject(id);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   // Makes sure there are no project tags that reference deleted User tags.
@@ -245,12 +187,18 @@ export const ProjectCard = ({
               variant="wrapped"
               content={
                 <Text variant="small">
-                  Created on {formatDate(createdAt)}
-                  {latestBuildVirtual?.publishStatus === "PUBLISHED" && (
+                  Created: {formatDate(createdAt)}
+                  {latestBuildVirtual?.updatedAt && (
                     <>
                       <br />
-                      Published on {formatDate(latestBuildVirtual.createdAt)}
+                      Last modified: {formatDate(latestBuildVirtual.updatedAt)}
                     </>
+                  )}
+                  <br />
+                  {isPublished && latestBuildVirtual ? (
+                    <>Published: {formatDate(latestBuildVirtual.createdAt)}</>
+                  ) : (
+                    <>Not published</>
                   )}
                 </Text>
               }
@@ -268,40 +216,17 @@ export const ProjectCard = ({
             <Text color="subtle">Not Published</Text>
           )}
         </Flex>
-        <Menu
-          tabIndex={-1}
-          onDelete={() => setIsDeleteDialogOpen(true)}
-          onRename={() => setIsRenameDialogOpen(true)}
-          onShare={() => setIsShareDialogOpen(true)}
-          onDuplicate={handleCloneProject}
-          onUpdateTags={() => setIsTagsDialogOpen(true)}
-        />
+        <ProjectMenu projectId={id} onOpenChange={setOpenDialog} />
       </CardFooter>
-      <RenameProjectDialog
-        isOpen={isRenameDialogOpen}
-        onOpenChange={setIsRenameDialogOpen}
-        title={title}
+      <ProjectDialogs
         projectId={id}
-      />
-      <DeleteProjectDialog
-        isOpen={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
+        title={title}
+        tags={tags}
+        openDialog={openDialog}
+        onOpenDialogChange={setOpenDialog}
         onHiddenChange={setIsHidden}
-        title={title}
-        projectId={id}
-      />
-      <ShareProjectDialog
-        isOpen={isShareDialogOpen}
-        onOpenChange={setIsShareDialogOpen}
-        projectId={id}
-        hasProPlan={hasProPlan}
-      />
-      <TagsDialog
-        projectId={id}
+        userPlanFeatures={userPlanFeatures}
         projectsTags={projectsTags}
-        projectTagsIds={projectTagsIds}
-        isOpen={isTagsDialogOpen}
-        onOpenChange={setIsTagsDialogOpen}
       />
     </Card>
   );
