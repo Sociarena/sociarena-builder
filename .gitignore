@@ -33,6 +33,7 @@ yarn-error.log*
 .env
 .env.development
 apps/builder/.env.local
+apps/builder/.env
 .env.development.local
 .env.test.local
 .env.production.local
