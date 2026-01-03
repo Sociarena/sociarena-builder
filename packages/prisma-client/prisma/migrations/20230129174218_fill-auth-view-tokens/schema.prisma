@@ -115,7 +115,7 @@ model AuthorizationTokens {
 
 // Dashboard
 view DashboardProject {
-  id          String  @id @default(uuid())
+  id          String  @unique
   title       String
   domain      String
   userId      String?

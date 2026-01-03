@@ -25,12 +25,12 @@ services:
         condition: service_healthy
     restart: always
     environment:
-      PGRST_DB_URI: postgres://webstudio:${DB_PASSWORD}@postgres:5432/webstudio
+      PGRST_DB_URI: postgres://webstudio:${DB_PASSWORD}@webstudio-postgres:5432/webstudio
       PGRST_DB_SCHEMAS: public
       PGRST_DB_ANON_ROLE: webstudio
-      PGRST_JWT_SECRET: jwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecret
+      PGRST_JWT_SECRET: ${PGRST_JWT_SECRET}
       PGRST_DB_USE_LEGACY_GUCS: "false"
-      PGRST_APP_SETTINGS_JWT_SECRET: jwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecretjwtsecret
+      PGRST_APP_SETTINGS_JWT_SECRET: ${PGRST_JWT_SECRET}
     ports:
       - "3001:3000"
 
