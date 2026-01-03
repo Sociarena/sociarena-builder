@@ -3,9 +3,9 @@ services:
     image: postgres:16-alpine
     container_name: webstudio-postgres
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-webstudio}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      - POSTGRES_DB=${POSTGRES_DB:-webstudio}
+      POSTGRES_USER: webstudio
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: webstudio
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -39,10 +39,10 @@ services:
         condition: service_healthy
     restart: always
     environment:
-      PGRST_DB_URI: postgresql://${POSTGRES_USER:-webstudio}:${POSTGRES_PASSWORD}@webstudio-postgres:5432/${POSTGRES_DB:-webstudio}
+      PGRST_DB_URI: postgres://webstudio:${DB_PASSWORD}@postgres:5432/webstudio
       PGRST_DB_SCHEMAS: public
-      PGRST_DB_ANON_ROLE: ${POSTGRES_USER:-webstudio}
-      PGRST_JWT_SECRET: ${PGRST_JWT_SECRET:?PGRST_JWT_SECRET is required}
+      PGRST_DB_ANON_ROLE: webstudio
+      PGRST_JWT_SECRET: ${PGRST_JWT_SECRET}
       PGRST_DB_USE_LEGACY_GUCS: "false"
       PGRST_APP_SETTINGS_JWT_SECRET: ${PGRST_JWT_SECRET}
       PGRST_DB_POOL: "10"
