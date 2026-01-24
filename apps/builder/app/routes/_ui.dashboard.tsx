@@ -4,8 +4,9 @@ import {
   Outlet,
   redirect,
   type ShouldRevalidateFunction,
-} from "react-router-dom";
-import { useLoaderData, type MetaFunction } from "@remix-run/react";
+  useLoaderData,
+  type MetaFunction,
+} from "@remix-run/react";
 import { type LoaderFunctionArgs } from "@remix-run/server-runtime";
 import {
   createCallerFactory,

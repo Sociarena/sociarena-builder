@@ -18,5 +18,5 @@ ENV PATH=/usr/local/bin:${PATH}
 COPY library-scripts/*.sh /tmp/library-scripts/
 
 ENV DOCKER_BUILDKIT=1
-RUN apt-get update
-RUN /bin/bash /tmp/library-scripts/docker-in-docker-debian.sh
+RUN apt-get update \
+&& /bin/bash /tmp/library-scripts/docker-in-docker-debian.sh

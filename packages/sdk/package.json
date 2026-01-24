@@ -57,6 +57,6 @@
     "@webstudio-is/template": "workspace:*",
     "@webstudio-is/tsconfig": "workspace:*",
     "html-tags": "^4.0.0",
-    "vitest": "^3.1.2"
+    "vitest": "^3.2.0"
   }
 }

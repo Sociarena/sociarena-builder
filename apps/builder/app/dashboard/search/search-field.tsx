@@ -1,5 +1,5 @@
 import { SearchField } from "@webstudio-is/design-system";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "@remix-run/react";
 import { dashboardPath } from "~/shared/router-utils";
 
 export const Search = () => {

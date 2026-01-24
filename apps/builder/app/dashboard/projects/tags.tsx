@@ -1,4 +1,4 @@
-import { useRevalidator, useSearchParams } from "react-router-dom";
+import { useRevalidator, useSearchParams } from "@remix-run/react";
 import { useState, type ComponentProps } from "react";
 import {
   Text,
@@ -113,7 +113,7 @@ const TagsList = ({
           }}
         >
           {projectsTags
-            .sort((a, b) => a.label.localeCompare(b.label))
+            .toSorted((a, b) => a.label.localeCompare(b.label))
             .map((tag, index) => (
               <ListItem asChild onSelect={() => {}} index={index} key={tag.id}>
                 <Flex

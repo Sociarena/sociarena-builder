@@ -89,9 +89,10 @@ export const findMany = async (userId: string, context: AppContext) => {
     );
   }
 
+  // Query DashboardProject without joins (views don't support FK relations in PostgREST)
   const data = await context.postgrest.client
     .from("DashboardProject")
-    .select("*, previewImageAsset:Asset (*), latestBuildVirtual (*)")
+    .select("*")
     .eq("userId", userId)
     .eq("isDeleted", false)
     .order("createdAt", { ascending: false })
@@ -100,10 +101,56 @@ export const findMany = async (userId: string, context: AppContext) => {
     throw data.error;
   }
 
+  const projectIds = data.data
+    .map((p) => p.id)
+    .filter((id): id is string => id !== null);
+
+  // Fetch assets and latestBuildVirtual separately using the Project table
+  const [assetsData, latestBuildsData] = await Promise.all([
+    projectIds.length > 0
+      ? context.postgrest.client
+          .from("Asset")
+          .select("*")
+          .in("projectId", projectIds)
+      : Promise.resolve({ data: [], error: null }),
+    projectIds.length > 0
+      ? context.postgrest.client
+          .from("Project")
+          .select("id, latestBuildVirtual (*)")
+          .in("id", projectIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  // Build maps for quick lookup
+  const assetsMap = new Map<string, unknown>();
+  if (assetsData.data) {
+    for (const asset of assetsData.data) {
+      assetsMap.set(`${asset.id}-${asset.projectId}`, asset);
+    }
+  }
+
+  const latestBuildsMap = new Map<string, unknown>();
+  if (latestBuildsData.data) {
+    for (const project of latestBuildsData.data) {
+      latestBuildsMap.set(project.id, project.latestBuildVirtual);
+    }
+  }
+
+  // Merge data into projects
+  const projectsWithRelations = data.data.map((project) => ({
+    ...project,
+    previewImageAsset: project.previewImageAssetId
+      ? assetsMap.get(`${project.previewImageAssetId}-${project.id}`) || null
+      : null,
+    latestBuildVirtual: project.id
+      ? latestBuildsMap.get(project.id) || null
+      : null,
+  }));
+
   // Type assertion: These fields are never null in practice (come from Project table which has them as required)
   return await fetchAndMapDomains(
-    data.data as Array<
-      (typeof data.data)[number] & {
+    projectsWithRelations as Array<
+      (typeof projectsWithRelations)[number] & {
         id: string;
         title: string;
         domain: string;
@@ -121,9 +168,11 @@ export const findManyByIds = async (
   if (projectIds.length === 0) {
     return [];
   }
+
+  // Query DashboardProject without joins (views don't support FK relations in PostgREST)
   const data = await context.postgrest.client
     .from("DashboardProject")
-    .select("*, previewImageAsset:Asset (*), latestBuildVirtual (*)")
+    .select("*")
     .in("id", projectIds)
     .eq("isDeleted", false)
     .order("createdAt", { ascending: false })
@@ -132,10 +181,56 @@ export const findManyByIds = async (
     throw data.error;
   }
 
+  const fetchedProjectIds = data.data
+    .map((p) => p.id)
+    .filter((id): id is string => id !== null);
+
+  // Fetch assets and latestBuildVirtual separately using the Project table
+  const [assetsData, latestBuildsData] = await Promise.all([
+    fetchedProjectIds.length > 0
+      ? context.postgrest.client
+          .from("Asset")
+          .select("*")
+          .in("projectId", fetchedProjectIds)
+      : Promise.resolve({ data: [], error: null }),
+    fetchedProjectIds.length > 0
+      ? context.postgrest.client
+          .from("Project")
+          .select("id, latestBuildVirtual (*)")
+          .in("id", fetchedProjectIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  // Build maps for quick lookup
+  const assetsMap = new Map<string, unknown>();
+  if (assetsData.data) {
+    for (const asset of assetsData.data) {
+      assetsMap.set(`${asset.id}-${asset.projectId}`, asset);
+    }
+  }
+
+  const latestBuildsMap = new Map<string, unknown>();
+  if (latestBuildsData.data) {
+    for (const project of latestBuildsData.data) {
+      latestBuildsMap.set(project.id, project.latestBuildVirtual);
+    }
+  }
+
+  // Merge data into projects
+  const projectsWithRelations = data.data.map((project) => ({
+    ...project,
+    previewImageAsset: project.previewImageAssetId
+      ? assetsMap.get(`${project.previewImageAssetId}-${project.id}`) || null
+      : null,
+    latestBuildVirtual: project.id
+      ? latestBuildsMap.get(project.id) || null
+      : null,
+  }));
+
   // Type assertion: These fields are never null in practice (come from Project table which has them as required)
   return await fetchAndMapDomains(
-    data.data as Array<
-      (typeof data.data)[number] & {
+    projectsWithRelations as Array<
+      (typeof projectsWithRelations)[number] & {
         id: string;
         title: string;
         domain: string;
