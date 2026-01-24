@@ -37,7 +37,8 @@
    mkcert -install
 
    # Generate certificates in the https/ folder
-   cd https/
+   mkdir https
+   cd https
    mkcert -key-file privkey.pem -cert-file fullchain.pem "wstd.dev" "*.wstd.dev" "vite.wstd.dev" "*.vite.wstd.dev"
 
    # Create combined certificate for HAProxy
