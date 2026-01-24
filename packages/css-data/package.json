@@ -19,7 +19,7 @@
     "@webstudio-is/tsconfig": "workspace:*",
     "html-tags": "^4.0.0",
     "mdn-data": "2.23.0",
-    "vitest": "^3.1.2",
+    "vitest": "^3.2.0",
     "zod": "^3.24.2"
   },
   "peerDependencies": {

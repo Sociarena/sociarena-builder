@@ -20,7 +20,7 @@ datasource db {
 }
 
 model Team {
-  id    String @id @default(uuid())
+  id    String @unique
   users User[]
 }
 
@@ -56,7 +56,7 @@ model Asset {
 }
 
 model User {
-  id               String             @id @default(uuid())
+  id               String             @unique
   email            String?            @unique
   provider         String?
   image            String?
@@ -140,7 +140,7 @@ view UserProduct {
 }
 
 model Project {
-  id                  String                 @id @default(uuid())
+  id                  String                 @unique
   createdAt           DateTime               @default(now())
   title               String
   domain              String                 @unique
@@ -222,7 +222,7 @@ enum DomainStatus {
 // In the future we can update this table using queue, n8n or temporal workflows.
 // As of now updates are done during UI interactions
 model Domain {
-  id        String   @id @default(uuid())
+  id        String   @unique
   domain    String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
@@ -273,7 +273,7 @@ view ProjectWithDomain {
   // We can deploy on per domain basis, here for each project domain we have latest build
   latestBuid LatestBuildPerProjectDomain?
 
-  @@id([projectId, domainId])
+  @@unique([projectId, domainId])
 }
 
 view LatestBuildPerProjectDomain {
@@ -286,7 +286,7 @@ view LatestBuildPerProjectDomain {
   publishStatus PublishStatus
   updatedAt     DateTime
 
-  @@id([projectId, domainId])
+  @@unique([projectId, domainId])
 }
 
 view LatestBuildPerProject {
@@ -300,12 +300,12 @@ view LatestBuildPerProject {
   publishStatus PublishStatus
   updatedAt     DateTime
 
-  @@id([projectId, domain])
+  @@unique([projectId, domain])
 }
 
 // Dashboard
 view DashboardProject {
-  id                  String   @id @default(uuid())
+  id                  String   @unique
   createdAt           DateTime @default(now())
   title               String
   domain              String

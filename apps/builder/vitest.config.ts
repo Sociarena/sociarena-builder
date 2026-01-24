@@ -9,14 +9,14 @@ export default defineConfig({
         replacement: resolve("app"),
       },
     ],
-    conditions: ["webstudio", "browser", "development|production"],
-    // conditions: ["webstudio", ...defaultClientConditions],
+    conditions: ["webstudio", "module", "browser"],
   },
-  // resolve webstudio condition in tests
   ssr: {
     resolve: {
-      conditions: ["webstudio", "node", "development|production"],
-      // conditions: ["webstudio", ...defaultServerConditions],
+      conditions: ["webstudio", "module", "node"],
     },
+  },
+  test: {
+    pool: "forks",
   },
 });

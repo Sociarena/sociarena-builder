@@ -19,8 +19,6 @@ _build
 
 # misc
 .DS_Store
-*.pem
-!https/*.pem
 /.idea
 
 # logs
@@ -30,12 +28,16 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # local env files
-# .env
+.env
 .env.development
 apps/builder/.env.local
+apps/builder/.env
 .env.development.local
 .env.test.local
 .env.production.local
+
+# https
+/https/*.pem
 
 # data
 /data
@@ -54,7 +56,6 @@ tsconfig.tsbuildinfo
 
 # to save thunder https://marketplace.visualstudio.com/items?itemName=rangav.vscode-thunder-client files
 .thunder
-apps/builder/.env.local
 
 # wrangler builds
 dist

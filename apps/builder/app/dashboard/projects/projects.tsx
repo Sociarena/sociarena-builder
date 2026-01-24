@@ -14,7 +14,7 @@ import type { DashboardProject } from "@webstudio-is/dashboard";
 import { ProjectCard } from "./project-card";
 import { CreateProject } from "./project-dialogs";
 import { Header, Main } from "../shared/layout";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "@remix-run/react";
 import { setIsSubsetOf } from "~/shared/shim";
 import type { User } from "~/shared/db/user.server";
 import type { UserPlanFeatures } from "~/shared/db/user-plan-features.server";

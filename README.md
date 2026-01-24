@@ -1,35 +1,57 @@
-<img width="1512" alt="builder-screenshot" src="https://github.com/webstudio-is/.github/blob/main/assets/builder-screenshot.png?raw=true">
-<br /><br />
+# Development Environment Setup
 
-<section align="center">
-  Webstudio is an Open Source Visual Development Platform for developers, designers, and cross-functional teams. You own the data, components, and infrastructure. You can use the hosted version or roll out your own.
-</section>
-<br /><br />
+## Prerequisites
 
-## Learning Resources
+- Infomaniak account
+- Node.js 20.x
+- pnpm
+- Docker
+- mkcert
 
-- [Blog](https://webstudio.is/blog)
-- [Documentation](https://docs.webstudio.is/)
-- [Brand and Product Design](https://docs.webstudio.is/contributing/contributing-for-designers)
-- [Contributing Guide for Devs](https://docs.webstudio.is/contributing/contributing-for-developers)
-- [Github Discussions](https://github.com/webstudio-is/webstudio-community/discussions)
-- [Wishlist](https://github.com/webstudio-is/webstudio-community/discussions/categories/wishlist)
-- [Builder Issues Tracker](https://github.com/webstudio-is/webstudio/issues)
-- [Roadmap](https://github.com/orgs/webstudio-is/projects/11)
+## Steps
 
-## Social Media
+1. Copy /.env.example to /.env and /apps/builder/.env.example to /apps/builder/.env
+2. Go to the [Infomaniak Manager Application API panel](https://manager.infomaniak.com/v3/845081/ng/profile/user/applications/list), create a new application with the following settings:
+   - Application type: Web Front-End
+   - Scopes:
+     - openid
+     - profile
+     - email
+     - phone
+   - Redirect URL:
+     - https://builder.sociarena.com/auth/infomaniak/callback
+     - https://vite.wstd.dev:5173/auth/infomaniak/callback
+3. Fill in environment variables in both /.env and /apps/builder/.env
+4. Run database migrations:
+   ```
+   npm run migrations migrate
+   ```
+5. Generate web developer certificates:
 
-- [Twitter](https://twitter.com/getwebstudio)
-- [Youtube](https://www.youtube.com/@getwebstudio)
-- [Discord](https://wstd.us/community)
+   ```bash
+   # Install mkcert if needed
+   brew install mkcert  # macOS
+   # or: sudo apt install mkcert  # Ubuntu/Debian
 
-## Thanks
+   # Install local CA (only once)
+   mkcert -install
 
-<a href="https://www.lost-pixel.com/"><img src="https://user-images.githubusercontent.com/29632358/168112844-77e76a0d-b96f-4bc8-b753-cd39f4afd428.png" width="50" height="50" alt="Lost Pixel" /></a>
+   # Generate certificates in the https/ folder
+   cd https/
+   mkcert -key-file privkey.pem -cert-file fullchain.pem "wstd.dev" "*.wstd.dev" "vite.wstd.dev" "*.vite.wstd.dev"
 
-Thanks to [Lost Pixel](https://www.lost-pixel.com/) for providing the visual testing platform that helps us review UI changes and catch visual regressions.
+   # Create combined certificate for HAProxy
+   cat fullchain.pem privkey.pem > haproxy.pem
 
-## License
+   cd ..
+   ```
 
-- **Webstudio core** (all functionality in this repository) is free/open-source under AGPL-3.0-or-later.
-- **sdk-components-animation** package (optional) is proprietary. You must accept the Webstudio, Inc. EULA located in [sdk-components-animation/LICENSE](./packages/sdk-components-animation/LICENSE) before using it.
+6. Run the Docker Compose dev stack:
+   ```
+   docker-compose -f docker-compose.dev.yml up -d
+   ```
+7. Run the app:
+   ```
+   npm run dev
+   ```
+8. Access the app at https://vite.wstd.dev:5173

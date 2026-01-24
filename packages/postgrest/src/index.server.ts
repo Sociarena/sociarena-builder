@@ -1,6 +1,6 @@
 import type { Database } from "./__generated__/db-types";
 import { PostgrestClient } from "@supabase/postgrest-js";
-import { Agent } from "http";
+import { Agent } from "node:http";
 
 export type { Database } from "./__generated__/db-types";
 

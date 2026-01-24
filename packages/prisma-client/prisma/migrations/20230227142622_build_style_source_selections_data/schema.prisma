@@ -18,7 +18,7 @@ datasource db {
 }
 
 model Team {
-  id    String @id @default(uuid())
+  id    String @unique
   users User[]
 }
 
@@ -48,7 +48,7 @@ model Asset {
 }
 
 model User {
-  id        String    @id @default(uuid())
+  id        String    @unique
   email     String?   @unique
   provider  String?
   image     String?
@@ -60,7 +60,7 @@ model User {
 }
 
 model Project {
-  id        String   @id @default(uuid())
+  id        String   @unique
   createdAt DateTime @default(now())
   title     String
   domain    String   @unique
@@ -133,7 +133,7 @@ model AuthorizationToken {
 
 // Dashboard
 view DashboardProject {
-  id          String   @id @default(uuid())
+  id          String   @unique
   createdAt   DateTime @default(now())
   title       String
   domain      String
